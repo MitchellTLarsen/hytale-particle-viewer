@@ -103,8 +103,10 @@ available, so the previews are close guesses rather than exact matches. Known ga
   comes from the player model's height against its 1.85-block hitbox.
 - **Animations:** off by default; the Animate box plays the picked animation set (202 models
   have some). Only the first animation of each set is offered, and when several model assets
-  share a model and name the same set, the first by id wins. `smooth` keyframes are read as
-  Catmull-Rom curves, orientations as quaternions on top of the rest pose, `shapeStretch` as
+  share a model and name the same set, the first by id wins. Looping animations wrap from each
+  track's last keyframe round to its first, since most looping tracks stop well before the
+  animation's end. `smooth` keyframes are read as Catmull-Rom curves with tangents scaled to
+  the keyframe spacing, orientations as quaternions on top of the rest pose, `shapeStretch` as
   stretch factors on the node's own shape. Blending between animations, `shapeUvOffset`
   (unused in the data) and animation speed changes in game are not reproduced.
 - **Bare models:** attachments (hair, faces, gear from `Server/Models` `DefaultAttachments`)
