@@ -310,7 +310,7 @@ function spawnerTable(groups) {
 
 function restartAll() {
   restart();
-  state.tabs.screen.restart();
+  for (const tab of Object.values(state.tabs)) tab.restart?.();
 }
 
 function wireControls() {
@@ -400,7 +400,7 @@ function startLoop() {
         if (state.restartIn <= 0) restart();
       }
     }
-    if (!state.paused) state.tabs.screen.step(dt);
+    if (!state.paused) for (const tab of Object.values(state.tabs)) tab.step?.(dt);
     renderer.shake = state.tabs.screen.cameraShake();
     const particles = state.tab === state.tabs.models ? null : state.instance;
     renderer.draw(particles);

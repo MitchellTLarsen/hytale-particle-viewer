@@ -1,5 +1,6 @@
 // Models tab: every .blockymodel in Common/, drawn with one of its textures.
 
+import { frameAt, samplePose } from './blockyanim.js';
 import { buildModel } from './blockymodel.js';
 import { element, formatNumber, rawJson } from './dom.js';
 
@@ -20,11 +21,42 @@ function describe(path) {
 
 export function createModelsTab(data, details, renderer) {
   const items = data.models.map((model) => ({ ...model, ...describe(model.path) }));
+  const animationCache = new Map();
   let request = 0;
+  let current = null; // {model, mesh} of the shown model, mesh in its rest pose
+  let playing = null; // {animation, speed, seconds}
+  let animate = false;
+  let chosenAnimation = 'Idle';
 
   function leave() {
     request++;
     renderer.model = null;
+    current = null;
+    playing = null;
+  }
+
+  function step(dt) {
+    if (!playing || !current || !renderer.model) return;
+    playing.seconds += dt;
+    const frame = frameAt(playing.animation, playing.seconds, playing.speed);
+    renderer.model.mesh = buildModel(current.model, samplePose(playing.animation, frame));
+  }
+
+  function restart() {
+    if (playing) playing.seconds = 0;
+  }
+
+  async function loadAnimation(file) {
+    if (!animationCache.has(file)) {
+      animationCache.set(
+        file,
+        fetch('assets/' + file).then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        }),
+      );
+    }
+    return animationCache.get(file);
   }
 
   async function select(item) {
@@ -49,13 +81,58 @@ export function createModelsTab(data, details, renderer) {
 
     const mesh = buildModel(model);
     const scale = 1 / unitsPerBlock(item.path);
+    current = { model, mesh };
     renderer.model = { mesh, texture: item.textures[0] ?? null, scale };
     frameCamera(renderer.camera, mesh, scale);
 
     const size = mesh.max.map((max, i) => formatNumber((max - mesh.min[i]) * scale));
     status.textContent = `Size: ${size.join(' x ')} blocks  |  Nodes: ${mesh.nodes}  |  Triangles: ${mesh.count / 3}`;
+    if (item.animations?.length) details.append(animationChooser(item, ticket));
     details.append(textureChooser(item));
     details.append(rawJson([[file, model]]));
+  }
+
+  function animationChooser(item, ticket) {
+    const toggle = element('input');
+    toggle.type = 'checkbox';
+    toggle.checked = animate;
+    const toggleLabel = element('label');
+    toggleLabel.append(toggle, ' Animate');
+    const choice = element('select');
+    for (const animation of item.animations) choice.append(new Option(animation.name, animation.name));
+    const names = item.animations.map((animation) => animation.name);
+    choice.value = names.includes(chosenAnimation) ? chosenAnimation : names.includes('Idle') ? 'Idle' : names[0];
+    const status = element('span', '', 'error');
+
+    const update = async () => {
+      playing = null;
+      status.textContent = '';
+      if (renderer.model) renderer.model.mesh = current.mesh;
+      if (!toggle.checked) return;
+      const entry = item.animations.find((animation) => animation.name === choice.value);
+      try {
+        const animation = await loadAnimation(entry.file);
+        if (ticket !== request || !toggle.checked || choice.value !== entry.name) return;
+        playing = { animation, speed: entry.speed ?? 1, seconds: 0 };
+      } catch (error) {
+        status.textContent = `Could not load ${entry.file} (${error.message}).`;
+      }
+    };
+    toggle.addEventListener('change', () => {
+      animate = toggle.checked;
+      update();
+    });
+    choice.addEventListener('change', () => {
+      chosenAnimation = choice.value;
+      update();
+    });
+    update();
+
+    const actions = element('div', undefined, 'actions');
+    const choiceLabel = element('label', `Animation (${names.length}) `);
+    choiceLabel.append(choice);
+    actions.append(toggleLabel, choiceLabel, status);
+    return actions;
   }
 
   function textureChooser(item) {
@@ -95,6 +172,8 @@ export function createModelsTab(data, details, renderer) {
     group: (item) => item.group,
     select,
     leave,
+    step,
+    restart,
   };
 }
 

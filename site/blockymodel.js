@@ -81,9 +81,9 @@ function addTriangle(out, corners, uvs, indices, fullbright) {
   for (const i of indices) out.push(...corners[i], ...uvs[i], ...normal, fullbright);
 }
 
-function addShape(out, shape, center, rotation, bounds) {
+function addShape(out, shape, center, rotation, bounds, stretchFactors = [1, 1, 1]) {
   const size = shapeSize(shape);
-  const stretch = vector(shape.stretch, 1);
+  const stretch = vector(shape.stretch, 1).map((s, i) => s * stretchFactors[i]);
   const half = size.map((s, i) => (s * stretch[i]) / 2);
   // A negative stretch mirrors the shape, which turns its triangles inside out.
   const mirrored = stretch[0] * stretch[1] * stretch[2] < 0;
@@ -109,20 +109,27 @@ function addShape(out, shape, center, rotation, bounds) {
   }
 }
 
-/** Returns {vertices, count, nodes, min, max}; min and max bound the drawn shapes in model units. */
-export function buildModel(model) {
+/**
+ * Returns {vertices, count, nodes, min, max}; min and max bound the drawn shapes in model units. `pose` maps node
+ * names to animation deltas (see blockyanim.js samplePose); without it the model is in its rest pose.
+ */
+export function buildModel(model, pose) {
   const out = [];
   const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
   let nodes = 0;
   const visit = (node, parentCenter, parentRotation) => {
     nodes++;
     const shape = node.shape ?? {};
+    const animated = pose?.get(node.name) ?? {};
     const o = node.orientation ?? {};
-    const rotation = multiplyQuaternions(parentRotation, normalize([o.x ?? 0, o.y ?? 0, o.z ?? 0, o.w ?? 1]));
-    const pivot = add(parentCenter, rotate(parentRotation, vector(node.position)));
+    let local = normalize([o.x ?? 0, o.y ?? 0, o.z ?? 0, o.w ?? 1]);
+    if (animated.orientation) local = multiplyQuaternions(local, animated.orientation);
+    const rotation = multiplyQuaternions(parentRotation, local);
+    const position = add(vector(node.position), animated.position ?? [0, 0, 0]);
+    const pivot = add(parentCenter, rotate(parentRotation, position));
     const center = add(pivot, rotate(rotation, vector(shape.offset)));
-    if ((shape.type === 'box' || shape.type === 'quad') && shape.visible !== false) {
-      addShape(out, shape, center, rotation, bounds);
+    if ((shape.type === 'box' || shape.type === 'quad') && (animated.visible ?? shape.visible !== false)) {
+      addShape(out, shape, center, rotation, bounds, animated.stretch);
     }
     for (const child of node.children ?? []) visit(child, center, rotation);
   };

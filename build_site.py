@@ -24,6 +24,7 @@ SOUNDS_ROOT = "Server/Audio/SoundEvents/"
 CAMERA_ROOT = "Server/Camera/"
 OVERLAYS_ROOT = "Common/ScreenEffects/"
 COMMON_ROOT = "Common/"
+MODEL_ASSETS_ROOT = "Server/Models/"
 SYSTEM_SUFFIX = ".particlesystem"
 SPAWNER_SUFFIX = ".particlespawner"
 MODEL_SUFFIX = ".blockymodel"
@@ -61,6 +62,7 @@ def main():
 
         models = read_models(assets, names)
         model_files = {m["path"] + MODEL_SUFFIX for m in models} | {t for m in models for t in m["textures"]}
+        model_files |= {a["file"] for m in models for a in m.get("animations", [])}
         copied += copy_files(assets, names, model_files, assets_dir, problems)
 
     data_dir = args.out / "data"
@@ -126,11 +128,13 @@ def read_overlays(assets, names):
 
 
 def read_models(assets, names):
-    """Return [{path, textures}] for every .blockymodel; path is relative to Common/ without the suffix.
+    """Return [{path, textures, animations?}] for every .blockymodel; path is relative to Common/ without the suffix.
 
     Textures come from the server and cosmetic assets that pair the model with one, most used
-    first; failing that, from the image files beside the model.
+    first; failing that, from the image files beside the model. Animations come from the
+    Server/Models assets that use the model.
     """
+    animations = model_animations(assets, names)
     pairs = collections.defaultdict(collections.Counter)
     for name in sorted(n for n in names if n.startswith(("Server/", "Cosmetics/")) and n.endswith(".json")):
         if name.startswith(SCAN_SKIP):
@@ -148,8 +152,44 @@ def read_models(assets, names):
     for name in sorted(n for n in names if n.startswith(COMMON_ROOT) and n.endswith(MODEL_SUFFIX)):
         file = name[len(COMMON_ROOT) :]
         textures = [t for t, _ in pairs[file].most_common() if t in known] or textures_beside(file, images)
-        models.append({"path": file.removesuffix(MODEL_SUFFIX), "textures": textures})
+        entry = {"path": file.removesuffix(MODEL_SUFFIX), "textures": textures}
+        if file in animations:
+            entry["animations"] = animations[file]
+        models.append(entry)
     return models
+
+
+def model_animations(assets, names):
+    """Return {model file: [{name, file, speed}]}: the first animation of each animation set of the model assets.
+
+    A model asset inherits Model and AnimationSets from its Parent when it leaves them out. When
+    several assets share a model and name the same set, the first asset by id wins.
+    """
+    model_assets = {}
+    for name in sorted(n for n in names if n.startswith(MODEL_ASSETS_ROOT) and n.endswith(".json")):
+        try:
+            model_assets[PurePosixPath(name).stem] = json.loads(assets.read(name))
+        except (ValueError, UnicodeDecodeError):
+            continue
+
+    def inherited(asset_id, key):
+        seen = set()
+        while asset_id in model_assets and asset_id not in seen:
+            seen.add(asset_id)
+            if model_assets[asset_id].get(key) is not None:
+                return model_assets[asset_id][key]
+            asset_id = model_assets[asset_id].get("Parent")
+        return None
+
+    found = collections.defaultdict(dict)
+    for asset_id in sorted(model_assets):
+        model = inherited(asset_id, "Model")
+        for set_name, animation_set in (inherited(asset_id, "AnimationSets") or {}).items():
+            first = next(iter(animation_set.get("Animations") or []), {})
+            file = first.get("Animation")
+            if model and file and COMMON_ROOT + file in names:
+                found[model].setdefault(set_name, {"name": set_name, "file": file, "speed": first.get("Speed", 1)})
+    return {model: list(sets.values()) for model, sets in found.items()}
 
 
 def collect_model_textures(value, pairs):

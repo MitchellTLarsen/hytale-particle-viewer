@@ -36,12 +36,13 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
     the `Common/ScreenEffects/*.png` overlays with the server assets that reference them.
   - `models.json`: every `Common/**/*.blockymodel` with its textures. A texture comes from the
     server or cosmetic assets that pair it with the model (`Texture`, `CustomModelTexture`,
-    `GreyscaleTexture`), most used first; failing that, from images beside the model. The model
-    files themselves are copied to `site/assets/` and loaded when picked.
+    `GreyscaleTexture`), most used first; failing that, from images beside the model. Animations
+    come from the `AnimationSets` of the `Server/Models` assets that use the model (inheriting
+    from `Parent`). The model and animation files are copied to `site/assets/` and loaded when picked.
 - `site/sim.js` simulates systems, spawners and particles from that JSON.
 - `site/render.js` draws the particles as textured quads and the picked model, with an orbit camera.
 - `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab;
-  `site/models.js` and `site/blockymodel.js` are the Models tab.
+  `site/models.js`, `site/blockymodel.js` and `site/blockyanim.js` are the Models tab.
 - `site/app.js` is the tabs, the list, the particle details and the controls.
 
 Field meanings come from the documentation strings in the server's asset codecs in the
@@ -100,7 +101,12 @@ available, so the previews are close guesses rather than exact matches. Known ga
 
 - **Scale:** models under `Blocks/` use 32 units per block, all others 64. The second figure
   comes from the player model's height against its 1.85-block hitbox.
-- **Static:** the model stands in its default pose; `.blockyanim` animations are not played.
+- **Animations:** off by default; the Animate box plays the picked animation set (202 models
+  have some). Only the first animation of each set is offered, and when several model assets
+  share a model and name the same set, the first by id wins. `smooth` keyframes are read as
+  Catmull-Rom curves, orientations as quaternions on top of the rest pose, `shapeStretch` as
+  stretch factors on the node's own shape. Blending between animations, `shapeUvOffset`
+  (unused in the data) and animation speed changes in game are not reproduced.
 - **Bare models:** attachments (hair, faces, gear from `Server/Models` `DefaultAttachments`)
   are not added, so a base character can look incomplete; the player's head has no front face
   because the face is an attachment.
