@@ -108,7 +108,8 @@ export class Renderer {
     this.particleVao = this.createParticleVao();
     this.gridVertexCount = 0;
     this.gridVao = this.createGridVao();
-    // Model parts to draw, set with setModels: [{mesh, texture, scale}], mesh as built by blockymodel.js. A part
+    // Model parts to draw, set with setModels: [{mesh, texture, scale, normalizedUv?}], mesh as built by
+    // blockymodel.js. A part
     // whose mesh is replaced (animation) is uploaded again on the next draw.
     this.models = [];
     this.modelProgram = createProgram(gl, MODEL_VERTEX, MODEL_FRAGMENT);
@@ -249,7 +250,8 @@ export class Renderer {
       gl.bindTexture(gl.TEXTURE_2D, image.handle);
       gl.bindSampler(0, this.samplers.nearest);
       gl.uniform1i(uniforms.uTexture, 0);
-      gl.uniform2f(uniforms.uTextureSize, image.width, image.height);
+      // Block faces carry 0-1 UVs; model parts carry texture pixels.
+      gl.uniform2f(uniforms.uTextureSize, part.normalizedUv ? 1 : image.width, part.normalizedUv ? 1 : image.height);
     }
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);

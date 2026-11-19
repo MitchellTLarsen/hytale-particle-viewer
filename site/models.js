@@ -268,8 +268,8 @@ export function createModelsTab(data, details, renderer, controls, makeSystem) {
   };
 }
 
-// Points the orbit camera at the model's middle, far enough back to see all of it.
-function frameCamera(camera, mesh, scale) {
+/** Points the orbit camera at the middle of `mesh` ({min, max} in units), far enough back to see it all. */
+export function frameCamera(camera, mesh, scale) {
   const center = mesh.min.map((min, i) => ((min + mesh.max[i]) / 2) * scale);
   const radius = Math.hypot(...mesh.max.map((max, i) => (max - mesh.min[i]) * scale)) / 2;
   camera.target = center;

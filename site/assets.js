@@ -166,5 +166,6 @@ export function createAssetsTab(data, details, models, setViewer, references) {
     group: (item) => item.group,
     select,
     leave,
+    lookup: { iconOf, assetPath },
   };
 }

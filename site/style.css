@@ -107,6 +107,10 @@ input[type='range'] {
   --accent: #d2a8ff;
 }
 
+[data-tab='prefabs'] {
+  --accent: #f2cc60;
+}
+
 /* ---------------------------------------------------------------- top bar */
 
 #topbar {
@@ -1079,6 +1083,7 @@ ul.drops ul.drops {
   font-variant-numeric: tabular-nums;
 }
 
+.palette img.icon,
 .item img.icon {
   width: 20px;
   height: 20px;

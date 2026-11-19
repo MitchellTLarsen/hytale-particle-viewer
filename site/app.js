@@ -7,6 +7,7 @@ import { createModelsTab } from './models.js';
 import { createPins } from './pins.js';
 import { createRelatedPanel } from './related.js';
 import { Renderer } from './render.js';
+import { createPrefabsTab } from './prefabs.js';
 import { createScreenTab } from './screen.js';
 import { createSearch } from './search.js';
 import { SystemInstance } from './sim.js';
@@ -103,9 +104,10 @@ async function fetchJson(path) {
 }
 
 async function loadData() {
-  const [data, sounds, screen, models, references, assets] = await Promise.all(
-    ['particles', 'sounds', 'screen', 'models', 'references', 'assets'].map((name) => fetchJson(`data/${name}.json`)),
-  );
+  const [data, sounds, screen, models, references, assets, prefabs] = await Promise.all([
+    ...['particles', 'sounds', 'screen', 'models', 'references', 'assets'].map((name) => fetchJson(`data/${name}.json`)),
+    fetchJson('data/prefabs.json').catch(() => ({ prefabs: [], blocks: {} })),
+  ]);
   state.related = createRelatedPanel(references, elements.related);
   state.systems = data.systems;
   state.problems = data.problems ?? [];
@@ -131,6 +133,7 @@ async function loadData() {
   ]) {
     state.tabs[tab.name] = tab;
   }
+  state.tabs.prefabs = createPrefabsTab(prefabs, elements.details, renderer, state.tabs.assets.lookup);
   configureLinks(linkTargets());
 }
 
