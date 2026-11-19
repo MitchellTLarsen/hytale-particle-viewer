@@ -1,6 +1,7 @@
-# Hytale effects viewer (proof of concept)
+# Hytale reference viewer (proof of concept)
 
-A static web page that browses Hytale's effects and models from `Assets.zip`, in four tabs:
+A static web page that browses Hytale's effects, models, server assets and prefabs from
+`Assets.zip`, as a reference for building worlds, in six tabs:
 
 - **Particles:** every particle system, with an approximate live preview in WebGL2.
 - **Sounds:** every sound event, playable in the browser, with the played file's waveform.
@@ -17,7 +18,18 @@ A static web page that browses Hytale's effects and models from `Assets.zip`, in
   template; a volume with what signals it and what it signals, enables, disables or spawns, and the
   interactions those NPCs run that signal back. NPC roles (through their
   `Appearance`), model assets and items with a model show that model in the view, with its
-  animations and textures.
+  animations and textures, the model asset's attachments (eyes, hair, gear) and its attached
+  particles. Other cards: weather colours through the day as 24-hour strips; drop lists as a tree
+  with chances; spawn rules (where, when, which NPCs); a crafting node view (ingredients → recipe
+  → item, and what the item is used in); "Dropped by" on items and "Where it spawns" and drops on
+  NPC roles; and a top-down or side **Map** of an instance's trigger volumes and points (on each
+  volume and on the instance's `config` page).
+- **Prefabs:** every prefab under `Server/Prefabs`, built from its blocks in the view, with its
+  block palette and spawn markers.
+
+**Search everything** (top bar) finds names in every tab and text inside every server file.
+Items and model assets show their icon in lists. Every item can be pinned (a Pinned group tops its
+tab's list) and given notes; both stay in this browser.
 
 Each tab has its own accent colour; nodes, arrows, volume events and Used by categories are
 colour-coded by kind. The view's playback controls float over it; model pickers (Animate, animation, texture) sit at
@@ -42,14 +54,15 @@ open http://localhost:8000
 `build_site.py --assets <path>` points at a different `Assets.zip`; the default is the launcher
 install at `~/Library/Application Support/Hytale/install/release/package/game/latest/Assets.zip`.
 `--no-sounds` skips copying the sound files (about 210 MB); the Sounds tab still lists the
-events but cannot play them. Re-run it after a game update.
+events but cannot play them. `--no-prefabs` skips converting the prefabs (about 20 seconds and
+145 MB). Re-run it after a game update.
 
 The generated `site/data/` and `site/assets/` contain Hypixel's assets. They are git-ignored;
 keep them on your machine and check Hytale's terms before publishing them anywhere.
 
 ## How it works
 
-- `build_site.py` copies the effect and model assets into six JSON files, copies the textures,
+- `build_site.py` copies the effect and model assets into eight JSON files, copies the textures,
   sound files and models they reference from `Common/`, and copies every scanned server and
   cosmetic JSON file to `site/data/json/` for the Assets tab:
   - `particles.json`: `Server/Particles/**/*.particlesystem` and `*.particlespawner`.
@@ -60,7 +73,13 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
     overlay and server asset, the server and cosmetic assets that mention it (trigger volumes in
     instances by volume name). `Server/Prefabs`, `Server/World` and `Server/HytaleGenerator` are
     not scanned.
-  - `assets.json`: the list for the Assets tab.
+  - `assets.json`: the list for the Assets tab, with each item's and model asset's `Icon`.
+  - `search.json`: each server file's distinct strings up to 120 characters, for the search box.
+  - `prefabs.json`: the prefab list and a block index (each block item's `BlockType`, resolved
+    through `Parent`: cube face textures, or `CustomModel` and its texture). Each prefab up to
+    5 MB is converted to `site/data/prefabs/` as a palette plus a flat list of x, y, z and
+    palette index per block, without air, and its spawn markers; the 59 bigger ones are only
+    listed.
   - `models.json`: every `Common/**/*.blockymodel` with its textures. A texture comes from the
     server or cosmetic assets that pair it with the model (`Texture`, `CustomModelTexture`,
     `GreyscaleTexture`), most used first; failing that, from images beside the model. Animations
@@ -70,8 +89,12 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
 - `site/render.js` draws the particles as textured quads and the picked model, with an orbit camera.
 - `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab;
   `site/models.js`, `site/blockymodel.js` and `site/blockyanim.js` are the Models tab.
-- `site/assets.js` is the Assets tab, `site/behaviour.js` its cards, `site/flow.js` their Flow views, `site/related.js` the Used
-  by panel and `site/links.js` the linked JSON views.
+- `site/assets.js` is the Assets tab, `site/behaviour.js` its role, interaction and volume cards,
+  `site/world.js` its weather, loot, spawn and crafting cards, `site/flow.js` the node views,
+  `site/map.js` the instance map, `site/related.js` the Used by panel and `site/links.js` the
+  linked JSON views.
+- `site/prefabs.js` is the Prefabs tab, `site/search.js` the search box, `site/pins.js` pins and
+  notes.
 - `site/app.js` is the tabs, the list, the particle details and the controls.
 
 Field meanings come from the documentation strings in the server's asset codecs in the
@@ -195,3 +218,36 @@ available, so the previews are close guesses rather than exact matches. Known ga
   are ignored, so a far volume with the same signal name shows too. More than eight targets of
   one effect fold into a "+N more" box.
 - Labels longer than a few words are numbered on the arrow and listed under the view.
+
+### Loot, spawns and crafting
+
+- Drop chances follow the server's `ItemDropContainer` classes: in a Multiple each child drops
+  when its `Weight` beats a roll out of 100 (so `Weight` is a percent chance, 100 by default); a
+  Choice picks one child by `Weight` against the total, `RollsMin` to `RollsMax` times.
+- "Dropped by" goes one step: the drop lists naming the item and the roles using those lists
+  (`DropList`), not lists nested in other lists. A role's `DropList` or `Appearance` set through
+  its own template parameters is resolved.
+- The crafting view shows at most 16 recipes per item. A recipe that only uses the item shows
+  that input alone, not its other ingredients. Resource-type inputs ("any item of type") link to
+  the resource type, not to the items in it.
+
+### Instance map
+
+- Volumes are drawn from their `Position` and `Shape`; rotation is not applied. In the side view
+  a cylinder is drawn centred on its `Center`, since the data does not say where its height
+  starts. Points come from the instance's `PointData.json`.
+
+### NPC look
+
+- Attachments come from the model asset's `DefaultAttachments` (not `RandomAttachmentSets`); an
+  attachment root named like a bone takes that bone's place and turn, as the Hytale Blockbench
+  plugin attaches pieces. Gradient tints are not applied.
+- Attached particles run at their `TargetNodeName`; `PositionOffset` is read as blocks, and
+  `Scale` and `RotationOffset` are not applied.
+
+### Prefabs
+
+- Block `rotation` codes are not decoded, so rotated logs, rails and models face their default
+  way. Block models are placed with their origin at the bottom centre of their block. Blocks
+  with no cube textures or model in their `BlockType` (such as fluids) are counted as "not
+  drawn". Faces are hidden only against blocks whose `Opacity` is unset or `Solid`.
