@@ -87,28 +87,23 @@ input[type='range'] {
   background-clip: padding-box;
 }
 
-body[data-tab='particles'],
-#tabs [data-tab='particles'] {
+[data-tab='particles'] {
   --accent: #ffa657;
 }
 
-body[data-tab='sounds'],
-#tabs [data-tab='sounds'] {
+[data-tab='sounds'] {
   --accent: #7ee787;
 }
 
-body[data-tab='screen'],
-#tabs [data-tab='screen'] {
+[data-tab='screen'] {
   --accent: #f778ba;
 }
 
-body[data-tab='models'],
-#tabs [data-tab='models'] {
+[data-tab='models'] {
   --accent: #79c0ff;
 }
 
-body[data-tab='assets'],
-#tabs [data-tab='assets'] {
+[data-tab='assets'] {
   --accent: #d2a8ff;
 }
 
@@ -174,6 +169,59 @@ h1 span {
 
 #tabs button.active::before {
   opacity: 1;
+}
+
+#global-search {
+  position: relative;
+  margin-left: auto;
+  width: min(420px, 40vw);
+}
+
+#search-all {
+  width: 100%;
+}
+
+#search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(560px, 90vw);
+  max-height: 72vh;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+#search-results h3 {
+  margin: 10px 6px 4px;
+  color: var(--accent);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#search-results a {
+  display: block;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#search-results a:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+#search-results a small {
+  margin-left: 8px;
+  color: var(--muted);
 }
 
 #app {
@@ -515,7 +563,6 @@ th,
 td {
   text-align: left;
   padding: 6px 8px;
-  overflow-wrap: anywhere;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
@@ -529,6 +576,15 @@ th {
 tbody tr:hover,
 tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+th {
+  white-space: nowrap;
+}
+
+/* Identifiers have no spaces; let them, and only them, wrap anywhere. */
+td.name {
+  overflow-wrap: anywhere;
 }
 
 td.missing {

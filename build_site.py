@@ -37,6 +37,8 @@ REFERENCE_KEY_HINTS = {
     "camera": ("Camera", "Shake", "Bobbing"),
     "modelAsset": ("Appearance", "Model"),
 }
+# Longer strings (descriptions, comments) are left out of the search index.
+SEARCH_STRING_LENGTH = 120
 # Large folders that never reference overlays or models; skipping them keeps the scans fast.
 SCAN_SKIP = ("Server/Prefabs/", "Server/World/", "Server/HytaleGenerator/")
 
@@ -82,7 +84,7 @@ def main():
             "modelAsset": {PurePosixPath(n).stem for n in names if n.startswith(MODEL_ASSETS_ROOT) and n.endswith(".json")},
             "asset": {PurePosixPath(n).stem for n in json_files},
         }
-        references, asset_paths = read_references(assets, json_files, known)
+        references, asset_paths, search = read_references(assets, json_files, known)
         copied += copy_json_files(assets, json_files, data_dir / "json")
 
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +94,7 @@ def main():
     write_json(data_dir / "models.json", {"models": models})
     write_json(data_dir / "references.json", references)
     write_json(data_dir / "assets.json", {"assets": asset_paths})
+    write_json(data_dir / "search.json", {"entries": search})
 
     print(
         f"{len(systems)} systems, {len(spawners)} spawners, {len(sounds)} sound events, "
@@ -143,7 +146,8 @@ def names_an_asset(value, key):
 def read_references(assets, json_files, known):
     """Index which server and cosmetic assets mention each viewer asset, and list the assets.
 
-    Returns ({"sources": [...], "refs": {"<kind>:<id>": [[source index, key], ...]}}, asset paths).
+    Returns ({"sources": [...], "refs": {"<kind>:<id>": [[source index, key], ...]}}, asset paths,
+    search entries). A search entry is [source, its distinct short strings joined by newlines].
     Kind "signal" lists who sends a trigger volume signal (SendSignal, SignalNearbyVolumes).
     A source or asset path is a file path, or "<TriggerVolumeData path>#<volume name>" for a
     volume in an instance. Model files and screen overlays match by path; ids of the other kinds
@@ -151,6 +155,7 @@ def read_references(assets, json_files, known):
     get mixed up.
     """
     sources, refs, seen, asset_paths = [], collections.defaultdict(list), set(), []
+    strings = collections.defaultdict(set)
 
     def add(kind, value, source, key):
         if (kind, value, source) in seen:
@@ -168,6 +173,8 @@ def read_references(assets, json_files, known):
             for child in value:
                 walk(child, source, key)
         elif isinstance(value, str):
+            if len(value) <= SEARCH_STRING_LENGTH:
+                strings[source].add(value)
             if value.endswith(MODEL_SUFFIX):
                 add("model", value, source, key)
             elif value.startswith("ScreenEffects/"):
@@ -193,7 +200,8 @@ def read_references(assets, json_files, known):
         else:
             asset_paths.append(name)
             walk(data, name)
-    return {"sources": sources, "refs": refs}, asset_paths
+    search = [[source, "\n".join(sorted(values))] for source, values in strings.items()]
+    return {"sources": sources, "refs": refs}, asset_paths, search
 
 
 def copy_json_files(assets, files, out_dir):

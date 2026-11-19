@@ -7,6 +7,7 @@ import { createModelsTab } from './models.js';
 import { createRelatedPanel } from './related.js';
 import { Renderer } from './render.js';
 import { createScreenTab } from './screen.js';
+import { createSearch } from './search.js';
 import { SystemInstance } from './sim.js';
 import { createSoundsTab } from './sounds.js';
 
@@ -345,7 +346,7 @@ function spawnerTable(groups) {
     showCell.append(toggle);
     row.append(showCell);
 
-    const nameCell = element('td', group.SpawnerId);
+    const nameCell = element('td', group.SpawnerId, 'name');
     nameCell.title = spawner ? spawner.path : 'Spawner not found';
     if (!spawner) nameCell.classList.add('missing');
     row.append(nameCell);
@@ -499,6 +500,7 @@ async function main() {
     return;
   }
   wireControls();
+  createSearch(document.getElementById('search-all'), document.getElementById('search-results'), Object.values(state.tabs));
   selectFromHash();
   startLoop();
 }
