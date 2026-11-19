@@ -84,8 +84,9 @@ def main():
             "modelAsset": {PurePosixPath(n).stem for n in names if n.startswith(MODEL_ASSETS_ROOT) and n.endswith(".json")},
             "asset": {PurePosixPath(n).stem for n in json_files},
         }
-        references, asset_paths, search = read_references(assets, json_files, known)
+        references, asset_paths, search, icons = read_references(assets, names, json_files, known)
         copied += copy_json_files(assets, json_files, data_dir / "json")
+        copied += copy_files(assets, names, set(icons.values()), assets_dir, problems)
 
     data_dir.mkdir(parents=True, exist_ok=True)
     write_json(data_dir / "particles.json", {"systems": systems, "spawners": spawners, "problems": problems})
@@ -93,7 +94,7 @@ def main():
     write_json(data_dir / "screen.json", {"camera": camera, "overlays": overlays})
     write_json(data_dir / "models.json", {"models": models})
     write_json(data_dir / "references.json", references)
-    write_json(data_dir / "assets.json", {"assets": asset_paths})
+    write_json(data_dir / "assets.json", {"assets": asset_paths, "icons": icons})
     write_json(data_dir / "search.json", {"entries": search})
 
     print(
@@ -143,11 +144,12 @@ def names_an_asset(value, key):
     return "_" in value or key.endswith("Id") or key in ("Parent", "Reference", "Appearance")
 
 
-def read_references(assets, json_files, known):
+def read_references(assets, names, json_files, known):
     """Index which server and cosmetic assets mention each viewer asset, and list the assets.
 
     Returns ({"sources": [...], "refs": {"<kind>:<id>": [[source index, key], ...]}}, asset paths,
-    search entries). A search entry is [source, its distinct short strings joined by newlines].
+    search entries, icons). A search entry is [source, its distinct short strings joined by newlines];
+    icons maps an asset path to the Icon image it names (items, model assets).
     Kind "signal" lists who sends a trigger volume signal (SendSignal, SignalNearbyVolumes).
     A source or asset path is a file path, or "<TriggerVolumeData path>#<volume name>" for a
     volume in an instance. Model files and screen overlays match by path; ids of the other kinds
@@ -156,6 +158,7 @@ def read_references(assets, json_files, known):
     """
     sources, refs, seen, asset_paths = [], collections.defaultdict(list), set(), []
     strings = collections.defaultdict(set)
+    icons = {}
 
     def add(kind, value, source, key):
         if (kind, value, source) in seen:
@@ -200,8 +203,11 @@ def read_references(assets, json_files, known):
         else:
             asset_paths.append(name)
             walk(data, name)
+            icon = data.get("Icon") if isinstance(data, dict) else None
+            if isinstance(icon, str) and icon.endswith(".png") and COMMON_ROOT + icon in names:
+                icons[name] = icon
     search = [[source, "\n".join(sorted(values))] for source, values in strings.items()]
-    return {"sources": sources, "refs": refs}, asset_paths, search
+    return {"sources": sources, "refs": refs}, asset_paths, search, icons
 
 
 def copy_json_files(assets, files, out_dir):

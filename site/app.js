@@ -181,6 +181,13 @@ function renderList() {
     for (const item of groupItems) {
       const button = document.createElement('button');
       const parts = item.id.split('/');
+      if (item.icon) {
+        const icon = element('img', undefined, 'icon');
+        icon.loading = 'lazy';
+        icon.alt = '';
+        icon.src = 'assets/' + item.icon;
+        button.append(icon);
+      }
       button.append(element('span', parts.pop(), 'name'));
       if (parts.length) button.append(element('span', parts.join('/'), 'sub'));
       button.title = item.path;

@@ -11,6 +11,13 @@ const SUMMARY_KEYS = ['Type', 'Parent', 'Reference', 'Appearance', 'Model', 'Max
 
 const stem = (path) => path.split('/').pop().replace(/\.json$/, '');
 
+function iconImage(icon) {
+  const image = element('img', undefined, 'icon');
+  image.src = 'assets/' + icon;
+  image.alt = '';
+  return image;
+}
+
 // Groups by the first two folders under Server/; a trigger volume is "<instance> volumes" / volume name.
 function describe(path) {
   const [file, volume] = path.split('#');
@@ -27,7 +34,10 @@ function describe(path) {
  */
 export function createAssetsTab(data, details, models, setViewer, references) {
   // Volumes come in file order; sorting puts them, like the files, in name order.
-  const items = data.assets.map((path) => ({ path, ...describe(path) })).sort((a, b) => a.path.localeCompare(b.path));
+  const icons = data.icons ?? {};
+  const items = data.assets
+    .map((path) => ({ path, ...describe(path), icon: icons[path] }))
+    .sort((a, b) => a.path.localeCompare(b.path));
   const modelAssets = new Map(
     items.filter((item) => item.path.startsWith('Server/Models/')).map((item) => [stem(item.path), item.path]),
   );
@@ -95,7 +105,9 @@ export function createAssetsTab(data, details, models, setViewer, references) {
     setViewer(false);
     const ticket = request;
     const [file, volume] = item.path.split('#');
-    details.replaceChildren(element('h2', item.id), element('p', item.path, 'path'));
+    const title = element('h2', item.id);
+    if (item.icon) title.prepend(iconImage(item.icon));
+    details.replaceChildren(title, element('p', item.path, 'path'));
     let asset;
     try {
       asset = await load(file);
