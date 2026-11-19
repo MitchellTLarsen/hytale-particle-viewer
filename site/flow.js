@@ -27,7 +27,7 @@ const assetHref = (path) => `#assets:${encodeURIComponent(path)}`;
 const stem = (path) => path.split('#')[0].split('/').pop().replace(/\.json$/, '');
 
 /** Collects nodes and edges; a node or edge added twice is kept once. */
-function graphBuilder() {
+export function graphBuilder() {
   const nodes = new Map();
   const edges = new Map();
   return {
@@ -87,6 +87,12 @@ function nodeBox(node) {
   const title = node.href ? element('a', node.title) : element('strong', node.title);
   if (node.href) title.href = node.href;
   title.className = 'title';
+  if (node.icon) {
+    const icon = element('img', undefined, 'icon');
+    icon.src = 'assets/' + node.icon;
+    icon.alt = '';
+    title.prepend(icon);
+  }
   box.append(title);
   if (node.lines.length) {
     const list = element('ul');
@@ -106,13 +112,14 @@ function svgElement(tag, attributes) {
 
 const ZOOMS = [0.4, 0.5, 0.65, 0.8, 1, 1.25];
 const SMALLEST_START_ZOOM = 0.65; // below this the text is too small to read without zooming in
-const EDGE_KINDS = ['state', 'signal', 'spawn', 'run', 'enable', 'disable'];
+const EDGE_KINDS = ['state', 'signal', 'spawn', 'run', 'enable', 'disable', 'craft'];
 let graphCount = 0;
 
 // An edge's colour comes from what its label says it does.
 function edgeKind(labels) {
   const first = labels[0] ?? '';
   if (first.startsWith('signal ')) return 'signal';
+  if (first.startsWith('×')) return 'craft';
   return { spawns: 'spawn', runs: 'run', enables: 'enable', disables: 'disable' }[first] ?? 'state';
 }
 

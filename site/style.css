@@ -911,6 +911,10 @@ code.signal {
   --edge: #ff7b72;
 }
 
+.edge-craft {
+  --edge: #f2cc60;
+}
+
 .graph-edges .edge {
   fill: none;
   stroke: var(--edge, #56606f);
@@ -948,6 +952,27 @@ code.signal {
 
 .node.kind-interaction {
   --kind: #56d4dd;
+}
+
+.node.kind-item {
+  --kind: #f2cc60;
+}
+
+.node.kind-recipe {
+  --kind: #7ee787;
+}
+
+.node.kind-resource {
+  --kind: #a5d6ff;
+}
+
+.node .title img.icon {
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  vertical-align: middle;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 .node.kind-more {

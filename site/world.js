@@ -1,8 +1,8 @@
-// World-building cards for the Assets tab: weather through the day, drop lists, spawn rules, and where items
-// drop and NPCs spawn.
+// World-building cards for the Assets tab: weather through the day, drop lists, spawn rules, crafting, and
+// where items drop and NPCs spawn.
 
 import { chips, element } from './dom.js';
-import { fillParameters } from './flow.js';
+import { fillParameters, graphBuilder, graphView } from './flow.js';
 
 const HOURS = 24;
 
@@ -222,15 +222,91 @@ async function spawnsOf(name, context) {
   return rows.length ? sectionCard('Where it spawns', rows) : null;
 }
 
+// ---------------------------------------------------------------- crafting
+
+const MAX_RECIPES = 16;
+const listOf = (value) => (Array.isArray(value) ? value : value ? [value] : []);
+const stemOf = (path) => path.split('/').pop().replace(/\.json$/, '');
+
+function benchName(recipe) {
+  const bench = listOf(recipe.BenchRequirement)[0];
+  if (!bench?.Id) return 'By hand';
+  return `${bench.Id.replace(/_/g, ' ')}${bench.RequiredTierLevel ? ` (tier ${bench.RequiredTierLevel})` : ''}`;
+}
+
+// An item's own Recipe makes the item itself, OutputQuantity at a time unless it lists Output.
+const ownOutputs = (name, recipe) => (listOf(recipe.Output).length ? listOf(recipe.Output) : [{ ItemId: name, Quantity: recipe.OutputQuantity ?? 1 }]);
+const recipeOutputs = (recipe) => (listOf(recipe.Output).length ? listOf(recipe.Output) : listOf(recipe.PrimaryOutput));
+
 /**
- * Extra cards for the Assets tab: drop lists, spawn rules, where items drop, and where NPCs spawn and what
- * they drop. `context`: {load, refsFor, assetPath, iconOf, link}.
+ * Ingredients → recipe → item, for the item's own recipe and every recipe that uses or makes it (from the
+ * reference index, at most MAX_RECIPES). Standalone recipe files draw just themselves.
+ */
+async function craftingCard(path, asset, context) {
+  const graph = graphBuilder();
+  const href = (name, folder) => {
+    const target = context.assetPath(name, folder);
+    return target ? `#assets:${encodeURIComponent(target)}` : undefined;
+  };
+  const itemNode = (name, accent) =>
+    graph.node(`item:${name}`, { kind: 'item', title: name, icon: context.iconOf(name), href: href(name, 'Server/Item/Items/'), accent });
+  const inputNode = (input) =>
+    input.ItemId
+      ? itemNode(input.ItemId)
+      : graph.node(`resource:${input.ResourceTypeId}`, {
+          kind: 'resource',
+          kicker: 'any item of type',
+          title: input.ResourceTypeId,
+          href: href(input.ResourceTypeId, 'Server/Item/ResourceTypes/'),
+        });
+  // A recipe that makes the focus item shows all its inputs; one that only uses it shows just that input,
+  // so a common ingredient doesn't pull in every other ingredient of every recipe.
+  const addRecipe = (id, recipe, outputs, focus) => {
+    const lines = [recipe.TimeSeconds ? `${recipe.TimeSeconds} s` : '', recipe.KnowledgeRequired ? 'needs to be learned' : ''].filter(Boolean);
+    const node = graph.node(`recipe:${id}`, { kind: 'recipe', kicker: 'recipe', title: benchName(recipe), lines });
+    const makesFocus = !focus || outputs.some((output) => output.ItemId === focus);
+    const inputs = listOf(recipe.Input).filter((input) => makesFocus || input.ItemId === focus);
+    for (const input of inputs) graph.edge(inputNode(input), node, `×${input.Quantity ?? 1}`);
+    for (const output of outputs) graph.edge(node, itemNode(output.ItemId, output.ItemId === focus ? 'focus' : undefined), `×${output.Quantity ?? 1}`);
+  };
+
+  if (path.startsWith('Server/Item/Recipes/')) {
+    addRecipe(path, asset, recipeOutputs(asset));
+  } else {
+    const name = stemOf(path);
+    itemNode(name, 'focus');
+    if (asset.Recipe) addRecipe(`own:${name}`, asset.Recipe, ownOutputs(name, asset.Recipe), name);
+    const users = context
+      .refsFor(`asset:${name}`)
+      .filter((ref) => ref.source.startsWith('Server/Item/Recipes/') || (ref.source.startsWith('Server/Item/Items/') && ref.field === 'ItemId'));
+    for (const { source } of users.slice(0, MAX_RECIPES)) {
+      const data = await context.load(source).catch(() => null);
+      if (!data) continue;
+      if (source.startsWith('Server/Item/Recipes/')) addRecipe(source, data, recipeOutputs(data), name);
+      else if (data.Recipe) addRecipe(`own:${stemOf(source)}`, data.Recipe, ownOutputs(stemOf(source), data.Recipe), name);
+    }
+    if (users.length > MAX_RECIPES) {
+      const more = graph.node('more:recipes', { kind: 'more', kicker: 'not shown', title: `+${users.length - MAX_RECIPES} more recipes` });
+      graph.edge(itemNode(name, 'focus'), more);
+    }
+  }
+  const result = graph.result();
+  if (result.nodes.length < 2) return null;
+  const card = element('section', undefined, 'card');
+  card.append(element('h3', 'Crafting'), graphView(result));
+  return card;
+}
+
+/**
+ * Extra cards for the Assets tab: drop lists, spawn rules, crafting, where items drop, and where NPCs spawn
+ * and what they drop. `context`: {load, refsFor, assetPath, iconOf, link}.
  */
 export async function worldCards(path, asset, context) {
   const name = path.split('/').pop().replace(/\.json$/, '');
   if (path.startsWith('Server/Drops/')) return [sectionCard('Drops', [...dropTree(asset, context).children])];
   if (path.startsWith('Server/NPC/Spawn/')) return [spawnCard(asset, context)];
-  if (path.startsWith('Server/Item/Items/')) return [await droppedBy(name, context)].filter(Boolean);
+  if (path.startsWith('Server/Item/Recipes/')) return [await craftingCard(path, asset, context)].filter(Boolean);
+  if (path.startsWith('Server/Item/Items/')) return [await craftingCard(path, asset, context), await droppedBy(name, context)].filter(Boolean);
   if (path.startsWith('Server/NPC/Roles/')) {
     const cards = [await spawnsOf(name, context)];
     const filled = fillParameters(asset, {});
