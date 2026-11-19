@@ -9,6 +9,13 @@ export function element(tag, text, className) {
 
 export const formatNumber = (value) => String(Math.round(value * 1000) / 1000);
 
+// Short facts as a row of pills; empty facts are left out.
+export function chips(facts) {
+  const row = element('div', undefined, 'chips');
+  for (const fact of facts.filter(Boolean)) row.append(element('span', fact, 'chip'));
+  return row;
+}
+
 export function button(text, onClick, className) {
   const node = element('button', text, className);
   node.addEventListener('click', onClick);

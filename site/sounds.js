@@ -1,12 +1,36 @@
-// Sounds tab: lists Server/Audio/SoundEvents and plays them with <audio> elements.
+// Sounds tab: lists Server/Audio/SoundEvents, plays them with <audio> elements and draws the played file's waveform.
 
-import { button, element, formatNumber, table } from './dom.js';
+import { button, chips, element, formatNumber, table } from './dom.js';
 import { rawJson } from './links.js';
 
 const VOLUME_KEY = 'soundVolume';
 const decibelsToGain = (decibels) => Math.min(1, 10 ** (decibels / 20));
 const randomBetween = (min = 0, max = 0) => min + Math.random() * (max - min);
 const fileName = (file) => file.split('/').pop();
+
+// One bar per pixel column from the lowest to the highest sample in it.
+function paintWave(canvas, buffer) {
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(canvas.clientWidth * ratio));
+  const height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const samples = buffer.getChannelData(0);
+  const step = Math.max(1, Math.floor(samples.length / width));
+  for (let x = 0; x < width; x++) {
+    let low = 1;
+    let high = -1;
+    for (let i = x * step; i < Math.min((x + 1) * step, samples.length); i++) {
+      low = Math.min(low, samples[i]);
+      high = Math.max(high, samples[i]);
+    }
+    if (low > high) continue;
+    const top = ((1 - high) / 2) * height;
+    context.fillRect(x, top, 1, Math.max(1, ((1 - low) / 2) * height - top));
+  }
+}
 
 export function createSoundsTab(data, details) {
   const byId = new Map(data.sounds.map((sound) => [sound.id, sound]));
@@ -73,14 +97,50 @@ export function createSoundsTab(data, details) {
     return label;
   }
 
+  let audioContext = null;
+  let wave = null; // {canvas, label} of the shown sound
+
+  async function drawWave(file) {
+    const target = wave;
+    if (!target) return;
+    target.label.textContent = `${fileName(file)}  ·  loading`;
+    try {
+      audioContext ??= new AudioContext();
+      const response = await fetch('assets/' + file);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const buffer = await audioContext.decodeAudioData(await response.arrayBuffer());
+      if (wave !== target) return;
+      paintWave(target.canvas, buffer);
+      target.label.textContent = `${fileName(file)}  ·  ${buffer.duration.toFixed(2)} s`;
+    } catch (error) {
+      if (wave === target) target.label.textContent = `${fileName(file)}  ·  no waveform (${error.message})`;
+    }
+  }
+
+  function waveStrip(event) {
+    const canvas = element('canvas');
+    const label = element('small');
+    const strip = element('div', undefined, 'wave');
+    strip.append(canvas, label);
+    wave = { canvas, label };
+    const first = (event.Layers ?? []).flatMap((layer) => layer.Files ?? [])[0];
+    if (first) requestAnimationFrame(() => drawWave(first));
+    else label.textContent = 'No sound files';
+    return strip;
+  }
+
   function play(event) {
     stop();
     if (status) status.textContent = '';
+    let drawn = false;
     for (const layer of event.Layers ?? []) {
       const files = layer.Files ?? [];
       if (files.length === 0 || Math.random() * 100 >= (layer.Probability ?? 100)) continue;
       const random = layer.RandomSettings ?? {};
-      playFile(files[Math.floor(Math.random() * files.length)], {
+      const file = files[Math.floor(Math.random() * files.length)];
+      if (!drawn) drawWave(file);
+      drawn = true;
+      playFile(file, {
         decibels: (event.Volume ?? 0) + (layer.Volume ?? 0) + randomBetween(random.MinVolume, random.MaxVolume),
         pitch: (event.Pitch ?? 0) + randomBetween(random.MinPitch, random.MaxPitch),
         loop: Boolean(layer.Looping),
@@ -101,7 +161,7 @@ export function createSoundsTab(data, details) {
     if (event.MaxDistance) facts.push(`Heard to ${event.MaxDistance} blocks (fades from ${event.StartAttenuationDistance ?? 0})`);
     if (event.MaxInstance) facts.push(`Max instances: ${event.MaxInstance}`);
     if (sound.data.Parent) facts.push(`Parent: ${sound.data.Parent}`);
-    details.append(element('p', facts.join('  |  '), 'facts'));
+    details.append(chips(facts));
     if (event.$Comment) details.append(element('p', `Comment: ${event.$Comment}`, 'comment'));
 
     const autoPlayToggle = element('input');
@@ -117,7 +177,7 @@ export function createSoundsTab(data, details) {
 
     const layers = event.Layers ?? [];
     if (layers.length === 0) details.append(element('p', 'This sound event has no layers.'));
-    else details.append(layerTable(event, layers));
+    else details.append(waveStrip(event), layerTable(event, layers));
 
     details.append(rawJson(parents(sound).map((s) => [`${s.id}.json`, s.data])));
     if (autoPlay) play(event);
@@ -132,6 +192,7 @@ export function createSoundsTab(data, details) {
         const play = () => {
           stop();
           playFile(file, { decibels, pitch: event.Pitch ?? 0 });
+          drawWave(file);
         };
         const node = button(fileName(file), play, 'file');
         node.title = file;

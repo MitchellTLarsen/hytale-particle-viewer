@@ -1,7 +1,7 @@
 // Plain-English cards for NPC roles, interactions and trigger volumes, shown above their JSON in the Assets tab.
 // Common sensor, action and effect types get a sentence; the rest show as their type and parameters.
 
-import { element } from './dom.js';
+import { chips, element } from './dom.js';
 import { valueNode } from './links.js';
 
 const META_KEYS = new Set(['Type', '$Comment', '$TODO', 'Enabled']);
@@ -256,7 +256,7 @@ function volumeCard(volume) {
   const facts = [`Shape: ${volume.Shape?.Type ?? '?'}`, `Affects: ${(volume.TargetTypes ?? []).join(', ') || 'nothing'}`];
   if (volume.Tags) facts.push(`Tags: ${Object.keys(volume.Tags).join(', ')}`);
   if (volume.Enabled === false) facts.push('Starts disabled');
-  card.append(element('p', facts.join('  |  '), 'muted'));
+  card.append(chips(facts));
   const rules = new Map();
   const ruleFor = (entry) => {
     const key = `${entry.Event}#${entry.Entry ?? 0}`;

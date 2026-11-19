@@ -3,7 +3,7 @@
 A static web page that browses Hytale's effects and models from `Assets.zip`, in four tabs:
 
 - **Particles:** every particle system, with an approximate live preview in WebGL2.
-- **Sounds:** every sound event, playable in the browser.
+- **Sounds:** every sound event, playable in the browser, with the played file's waveform.
 - **Screen:** camera shakes and view bobbing (applied to the preview camera) and the
   full-screen overlay images (fire, poison, spyglass and so on).
 - **Models:** every `.blockymodel` (NPCs, characters, items, blocks, cosmetics) with its texture
@@ -12,7 +12,12 @@ A static web page that browses Hytale's effects and models from `Assets.zip`, in
   entity effects, drops, spawns and so on), plus each trigger volume in an instance on its own.
   NPC roles, interactions and trigger volumes also get a plain-English card: a role's states and
   rules ("When state is Idle and a player is within 64 blocks in line of sight: start timer..."),
-  an interaction's steps, a volume's rules by event with their delays.
+  an interaction's steps, a volume's rules by event with their delays. NPC roles (through their
+  `Appearance`), model assets and items with a model show that model in the view, with its
+  animations and textures.
+
+The view's playback controls float over it; model pickers (Animate, animation, texture) sit at
+its top left. Drag the bar under the view to resize it; the height is remembered.
 
 A **Used by** panel on the right lists the server assets that use the picked item (NPC roles,
 items and blocks, interactions, entity effects, trigger volumes and so on), when there are any;
@@ -162,3 +167,11 @@ available, so the previews are close guesses rather than exact matches. Known ga
 - A rule that uses a shared component (`Reference`) links to it rather than expanding it.
 - A trigger volume's effects run when the conditions with the same event and `Entry` pass
   (verified in the server's `TriggerVolumeTickingSystem`); "rule 2" is `Entry` 1.
+
+### Asset previews
+
+- The model an asset shows comes from its own `Model` and `Texture` (a model asset inherits them
+  from `Parent`; the texture only from the asset that sets the model or a child of it), a role's
+  `Appearance` model asset, or an item's `Model`/`Texture` or `BlockType.CustomModel`/
+  `CustomModelTexture`. Template parameters (`‹Name›`) are not resolved, so such roles show none.
+

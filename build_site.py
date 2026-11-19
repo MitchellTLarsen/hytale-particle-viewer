@@ -68,8 +68,9 @@ def main():
         overlays = read_overlays(assets, names)
         copied += copy_files(assets, names, {o["texture"] for o in overlays}, assets_dir, problems)
 
-        models = read_models(assets, names)
+        models, named_textures = read_models(assets, names)
         model_files = {m["path"] + MODEL_SUFFIX for m in models} | {t for m in models for t in m["textures"]}
+        model_files |= {t for t in named_textures if COMMON_ROOT + t in names}
         model_files |= {a["file"] for m in models for a in m.get("animations", [])}
         copied += copy_files(assets, names, model_files, assets_dir, problems)
 
@@ -210,7 +211,9 @@ def read_overlays(assets, names):
 
 
 def read_models(assets, names):
-    """Return [{path, textures, animations?}] for every .blockymodel; path is relative to Common/ without the suffix.
+    """Return ([{path, textures, animations?}] for every .blockymodel, every texture an asset names).
+
+    A model's path is relative to Common/ without the suffix.
 
     Textures come from the server and cosmetic assets that pair the model with one, most used
     first; failing that, from the image files beside the model. Animations come from the
@@ -218,11 +221,12 @@ def read_models(assets, names):
     """
     animations = model_animations(assets, names)
     pairs = collections.defaultdict(collections.Counter)
+    named = set()
     for name in sorted(n for n in names if n.startswith(("Server/", "Cosmetics/")) and n.endswith(".json")):
         if name.startswith(SCAN_SKIP):
             continue
         try:
-            collect_model_textures(json.loads(assets.read(name)), pairs)
+            collect_model_textures(json.loads(assets.read(name)), pairs, named)
         except (ValueError, UnicodeDecodeError):
             continue
     images = collections.defaultdict(list)
@@ -238,7 +242,7 @@ def read_models(assets, names):
         if file in animations:
             entry["animations"] = animations[file]
         models.append(entry)
-    return models
+    return models, named
 
 
 def model_animations(assets, names):
@@ -274,16 +278,18 @@ def model_animations(assets, names):
     return {model: list(sets.values()) for model, sets in found.items()}
 
 
-def collect_model_textures(value, pairs):
+def collect_model_textures(value, pairs, named):
+    """Count the textures named beside each model path; add every texture named at all to `named`."""
     if isinstance(value, dict):
         textures = textures_named_in(value)
+        named.update(textures)
         for item in value.values():
             if isinstance(item, str) and item.endswith(MODEL_SUFFIX):
                 pairs[item].update(textures)
-            collect_model_textures(item, pairs)
+            collect_model_textures(item, pairs, named)
     elif isinstance(value, list):
         for item in value:
-            collect_model_textures(item, pairs)
+            collect_model_textures(item, pairs, named)
 
 
 def textures_named_in(entry):

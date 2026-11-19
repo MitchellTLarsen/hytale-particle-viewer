@@ -1,8 +1,9 @@
-// Models tab: every .blockymodel in Common/, drawn with one of its textures.
+// Models tab: every .blockymodel in Common/, drawn with one of its textures. Its preview (the model in the
+// view, with animation and texture pickers on top) is also used by the Assets tab.
 
 import { frameAt, samplePose } from './blockyanim.js';
 import { buildModel } from './blockymodel.js';
-import { element, formatNumber } from './dom.js';
+import { chips, element, formatNumber } from './dom.js';
 import { rawJson } from './links.js';
 
 const GENERIC_NAMES = new Set(['Model', 'Models']);
@@ -10,6 +11,8 @@ const GENERIC_NAMES = new Set(['Model', 'Models']);
 // Block models use 32 units per block; characters, NPCs and items use 64 (the player model is
 // 118 units tall and its hitbox 1.85 blocks).
 const unitsPerBlock = (path) => (path.startsWith('Blocks/') ? 32 : 64);
+
+const fileName = (path) => path.split('/').pop();
 
 // Groups by the first two folders; the label is the rest of the path without generic "Models/Model" names.
 function describe(path) {
@@ -20,20 +23,31 @@ function describe(path) {
   return { group: group.join('/'), id: rest.join('/') };
 }
 
-export function createModelsTab(data, details, renderer) {
+async function loadJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export function createModelsTab(data, details, renderer, controls) {
   const items = data.models.map((model) => ({ ...model, ...describe(model.path) }));
+  const byPath = new Map(items.map((item) => [item.path, item]));
   const animationCache = new Map();
   let request = 0;
   let current = null; // {model, mesh} of the shown model, mesh in its rest pose
   let playing = null; // {animation, speed, seconds}
+  let onTexture = null; // keeps a texture picture in the details in step with the picker
   let animate = false;
   let chosenAnimation = 'Idle';
 
-  function leave() {
+  function clearPreview() {
     request++;
     renderer.model = null;
     current = null;
     playing = null;
+    onTexture = null;
+    controls.hidden = true;
+    controls.replaceChildren();
   }
 
   function step(dt) {
@@ -47,61 +61,70 @@ export function createModelsTab(data, details, renderer) {
     if (playing) playing.seconds = 0;
   }
 
-  async function loadAnimation(file) {
+  function loadAnimation(file) {
     if (!animationCache.has(file)) {
-      animationCache.set(
-        file,
-        fetch('assets/' + file).then((response) => {
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return response.json();
-        }),
-      );
+      const loading = loadJson('assets/' + file);
+      loading.catch(() => animationCache.delete(file));
+      animationCache.set(file, loading);
     }
     return animationCache.get(file);
   }
 
-  async function select(item) {
-    leave();
+  /**
+   * Shows the model at `path` (under Common/, without .blockymodel) in the view, `texture` first among its
+   * textures. Resolves to {model, mesh, scale, textures}, to {error} when the model can't load, or to null
+   * when another preview has started meanwhile.
+   */
+  async function preview(path, texture) {
+    clearPreview();
     const ticket = request;
-    const file = `${item.path}.blockymodel`;
-    details.replaceChildren(element('h2', item.id), element('p', `Common/${file}`, 'path'));
-    const status = element('p', 'Loading...', 'facts');
-    details.append(status);
+    const item = byPath.get(path);
     let model;
     try {
-      const response = await fetch('assets/' + file);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      model = await response.json();
+      model = await loadJson(`assets/${path}.blockymodel`);
     } catch (error) {
-      if (ticket !== request) return;
-      status.className = 'error';
-      status.textContent = `Could not load the model (${error.message}). Re-run build_site.py.`;
-      return;
+      return ticket === request ? { error } : null;
     }
-    if (ticket !== request) return;
-
+    if (ticket !== request) return null;
     const mesh = buildModel(model);
-    const scale = 1 / unitsPerBlock(item.path);
+    const scale = 1 / unitsPerBlock(path);
+    const textures = [...new Set([texture, ...(item?.textures ?? [])].filter(Boolean))];
     current = { model, mesh };
-    renderer.model = { mesh, texture: item.textures[0] ?? null, scale };
+    renderer.model = { mesh, texture: textures[0] ?? null, scale };
     frameCamera(renderer.camera, mesh, scale);
-
-    const size = mesh.max.map((max, i) => formatNumber((max - mesh.min[i]) * scale));
-    status.textContent = `Size: ${size.join(' x ')} blocks  |  Nodes: ${mesh.nodes}  |  Triangles: ${mesh.count / 3}`;
-    if (item.animations?.length) details.append(animationChooser(item, ticket));
-    details.append(textureChooser(item));
-    details.append(rawJson([[file, model]]));
+    fillControls(item?.animations ?? [], textures, ticket);
+    return { model, mesh, scale, textures };
   }
 
-  function animationChooser(item, ticket) {
+  function fillControls(animations, textures, ticket) {
+    const parts = [];
+    if (animations.length) parts.push(...animationControls(animations, ticket));
+    if (textures.length > 1) {
+      const choice = element('select');
+      choice.title = 'Texture';
+      for (const texture of textures) choice.append(new Option(fileName(texture), texture));
+      choice.addEventListener('change', () => {
+        renderer.model.texture = choice.value;
+        onTexture?.(choice.value);
+      });
+      parts.push(choice);
+    } else if (textures.length === 0) {
+      parts.push(element('span', 'No texture: drawn grey', 'muted'));
+    }
+    controls.replaceChildren(...parts);
+    controls.hidden = parts.length === 0;
+  }
+
+  function animationControls(animations, ticket) {
     const toggle = element('input');
     toggle.type = 'checkbox';
     toggle.checked = animate;
     const toggleLabel = element('label');
-    toggleLabel.append(toggle, ' Animate');
+    toggleLabel.append(toggle, 'Animate');
     const choice = element('select');
-    for (const animation of item.animations) choice.append(new Option(animation.name, animation.name));
-    const names = item.animations.map((animation) => animation.name);
+    choice.title = `Animation (${animations.length})`;
+    for (const animation of animations) choice.append(new Option(animation.name, animation.name));
+    const names = animations.map((animation) => animation.name);
     choice.value = names.includes(chosenAnimation) ? chosenAnimation : names.includes('Idle') ? 'Idle' : names[0];
     const status = element('span', '', 'error');
 
@@ -110,13 +133,13 @@ export function createModelsTab(data, details, renderer) {
       status.textContent = '';
       if (renderer.model) renderer.model.mesh = current.mesh;
       if (!toggle.checked) return;
-      const entry = item.animations.find((animation) => animation.name === choice.value);
+      const entry = animations.find((animation) => animation.name === choice.value);
       try {
         const animation = await loadAnimation(entry.file);
         if (ticket !== request || !toggle.checked || choice.value !== entry.name) return;
         playing = { animation, speed: entry.speed ?? 1, seconds: 0 };
       } catch (error) {
-        status.textContent = `Could not load ${entry.file} (${error.message}).`;
+        status.textContent = `Could not load ${fileName(entry.file)}`;
       }
     };
     toggle.addEventListener('change', () => {
@@ -128,41 +151,44 @@ export function createModelsTab(data, details, renderer) {
       update();
     });
     update();
-
-    const actions = element('div', undefined, 'actions');
-    const choiceLabel = element('label', `Animation (${names.length}) `);
-    choiceLabel.append(choice);
-    actions.append(toggleLabel, choiceLabel, status);
-    return actions;
+    return [toggleLabel, choice, status];
   }
 
-  function textureChooser(item) {
-    const container = element('div');
-    if (item.textures.length === 0) {
-      container.append(element('p', 'No texture found for this model; drawn grey.', 'notes'));
-      return container;
-    }
-    const preview = element('img', undefined, 'texture');
-    preview.alt = '';
-    const show = (texture) => {
-      renderer.model.texture = texture;
-      preview.src = 'assets/' + texture;
-      preview.title = texture;
+  /** A texture picture that follows the texture picker. */
+  function texturePicture(textures) {
+    if (textures.length === 0) return element('p', 'No texture found for this model; drawn grey.', 'notes');
+    const picture = element('img', undefined, 'texture');
+    picture.alt = '';
+    onTexture = (texture) => {
+      picture.src = 'assets/' + texture;
+      picture.title = texture;
     };
-    const actions = element('div', undefined, 'actions');
-    if (item.textures.length > 1) {
-      const choice = element('select');
-      for (const texture of item.textures) choice.append(new Option(texture, texture));
-      choice.addEventListener('change', () => show(choice.value));
-      const label = element('label', 'Texture ');
-      label.append(choice);
-      actions.append(label);
-    } else {
-      actions.append(element('span', `Texture: ${item.textures[0]}`));
+    onTexture(textures[0]);
+    return picture;
+  }
+
+  async function select(item) {
+    const file = `${item.path}.blockymodel`;
+    details.replaceChildren(element('h2', item.id), element('p', `Common/${file}`, 'path'));
+    const shown = await preview(item.path);
+    if (!shown) return;
+    if (shown.error) {
+      details.append(element('p', `Could not load the model (${shown.error.message}). Re-run build_site.py.`, 'error'));
+      return;
     }
-    show(item.textures[0]);
-    container.append(actions, preview);
-    return container;
+    const { model, mesh, scale, textures } = shown;
+    const size = mesh.max.map((max, i) => formatNumber((max - mesh.min[i]) * scale));
+    details.append(
+      chips([
+        `${size.join(' × ')} blocks`,
+        `${mesh.nodes} nodes`,
+        `${mesh.count / 3} triangles`,
+        item.animations?.length && `${item.animations.length} animations`,
+        textures.length > 1 && `${textures.length} textures`,
+      ]),
+      texturePicture(textures),
+      rawJson([[file, model]]),
+    );
   }
 
   return {
@@ -172,9 +198,12 @@ export function createModelsTab(data, details, renderer) {
     items,
     group: (item) => item.group,
     select,
-    leave,
+    leave: clearPreview,
     step,
     restart,
+    preview,
+    clearPreview,
+    texturePicture,
   };
 }
 

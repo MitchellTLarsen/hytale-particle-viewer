@@ -3,54 +3,63 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hytale effects viewer</title>
+    <title>Hytale reference viewer</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <aside id="sidebar">
-      <header>
-        <h1>Hytale effects</h1>
-        <nav id="tabs">
-          <button data-tab="particles">Particles</button>
-          <button data-tab="sounds">Sounds</button>
-          <button data-tab="screen">Screen</button>
-          <button data-tab="models">Models</button>
-          <button data-tab="assets">Assets</button>
-        </nav>
-        <input id="search" type="search" placeholder="Search by name or folder" autocomplete="off" />
-        <label><input id="show-hidden" type="checkbox" /> Show _Test and _Example</label>
-        <p id="count"></p>
-      </header>
-      <nav id="list"></nav>
-    </aside>
-    <main>
-      <section id="viewer">
-        <div id="stage">
-          <canvas id="canvas"></canvas>
-          <img id="overlay" alt="" hidden />
+    <header id="topbar">
+      <h1>Hytale <span>reference</span></h1>
+      <nav id="tabs">
+        <button data-tab="particles">Particles</button>
+        <button data-tab="sounds">Sounds</button>
+        <button data-tab="screen">Screen</button>
+        <button data-tab="models">Models</button>
+        <button data-tab="assets">Assets</button>
+      </nav>
+    </header>
+    <div id="app">
+      <aside id="sidebar">
+        <div id="finder">
+          <input id="search" type="search" placeholder="Search by name or folder" autocomplete="off" />
+          <div class="finder-row">
+            <label title="Show the _Test and _Example folders"><input id="show-hidden" type="checkbox" /> Include tests</label>
+            <span id="count"></span>
+          </div>
         </div>
-        <div id="controls">
-          <button id="restart" title="Restart (R)">Restart</button>
-          <button id="pause" title="Pause (Space)">Pause</button>
-          <label>
-            Speed
-            <select id="speed">
-              <option value="0.1">0.1x</option>
-              <option value="0.25">0.25x</option>
-              <option value="0.5">0.5x</option>
-              <option value="1" selected>1x</option>
-              <option value="2">2x</option>
-            </select>
-          </label>
-          <label><input id="grid" type="checkbox" checked /> Grid</label>
-          <label>Background <input id="background" type="color" value="#1b1d22" /></label>
-          <span id="stats"></span>
-          <span class="hint">Drag: orbit. Shift-drag: pan. Wheel: zoom. Double-click: reset. Up/Down: next effect.</span>
-        </div>
-      </section>
-      <section id="details"></section>
-    </main>
-    <aside id="related" hidden></aside>
+        <nav id="list"></nav>
+      </aside>
+      <main>
+        <section id="viewer">
+          <div id="stage">
+            <canvas id="canvas"></canvas>
+            <img id="overlay" alt="" hidden />
+            <div id="model-controls" class="toolbar top-left" hidden></div>
+            <span id="stats" class="badge top-right"></span>
+            <div id="controls" class="toolbar bottom-left">
+              <button id="restart" title="Restart (R)">Restart</button>
+              <button id="pause" title="Pause (Space)">Pause</button>
+              <select id="speed" title="Playback speed">
+                <option value="0.1">0.1x</option>
+                <option value="0.25">0.25x</option>
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1x</option>
+                <option value="2">2x</option>
+              </select>
+              <label><input id="grid" type="checkbox" checked /> Grid</label>
+              <input id="background" type="color" value="#1b1d22" title="Background colour" />
+            </div>
+            <span
+              class="badge bottom-right help"
+              title="Drag: orbit. Shift-drag or right-drag: pan. Wheel: zoom. Double-click: reset view. Up/Down: next item. Space: pause. R: restart."
+              >Controls ?</span
+            >
+          </div>
+        </section>
+        <div id="splitter" title="Drag to resize the view"></div>
+        <section id="details"></section>
+      </main>
+      <aside id="related" hidden></aside>
+    </div>
     <script type="module" src="app.js"></script>
   </body>
 </html>

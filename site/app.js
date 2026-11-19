@@ -1,7 +1,7 @@
 // Page wiring: loads the data, switches tabs, lists items, shows particle details and runs the preview loop.
 
 import { createAssetsTab } from './assets.js';
-import { element, formatNumber } from './dom.js';
+import { chips, element, formatNumber } from './dom.js';
 import { configureLinks, rawJson } from './links.js';
 import { createModelsTab } from './models.js';
 import { createRelatedPanel } from './related.js';
@@ -13,6 +13,9 @@ import { createSoundsTab } from './sounds.js';
 const RESTART_PAUSE = 0.6; // seconds between the end of a one-shot effect and its replay
 const HIDDEN_FOLDERS = new Set(['_Test', '_Example']);
 const MAX_FRAME_SECONDS = 0.05;
+const VIEWER_HEIGHT_KEY = 'viewerHeight';
+// Tabs that draw the current particle system behind their own preview.
+const PARTICLE_TABS = new Set(['particles', 'screen']);
 
 // Spawner features present in the data that the preview does not reproduce.
 const NOT_SIMULATED = [
@@ -42,6 +45,8 @@ const elements = {
   grid: document.getElementById('grid'),
   background: document.getElementById('background'),
   stats: document.getElementById('stats'),
+  modelControls: document.getElementById('model-controls'),
+  splitter: document.getElementById('splitter'),
 };
 
 const state = {
@@ -104,12 +109,13 @@ async function loadData() {
     group: (system) => topFolder(system.path),
     select: selectSystem,
   };
+  const modelsTab = createModelsTab(models, elements.details, renderer, elements.modelControls);
   for (const tab of [
     particles,
     createSoundsTab(sounds, elements.details),
     createScreenTab(screen, elements.details, elements.overlay),
-    createModelsTab(models, elements.details, renderer),
-    createAssetsTab(assets, elements.details),
+    modelsTab,
+    createAssetsTab(assets, elements.details, modelsTab, showViewer),
   ]) {
     state.tabs[tab.name] = tab;
   }
@@ -173,7 +179,9 @@ function renderList() {
     group.append(summary);
     for (const item of groupItems) {
       const button = document.createElement('button');
-      button.textContent = item.id;
+      const parts = item.id.split('/');
+      button.append(element('span', parts.pop(), 'name'));
+      if (parts.length) button.append(element('span', parts.join('/'), 'sub'));
       button.title = item.path;
       button.dataset.path = item.path;
       button.classList.toggle('selected', item === selected);
@@ -211,8 +219,32 @@ function showTab(tab) {
   for (const button of elements.tabs.querySelectorAll('button')) {
     button.classList.toggle('active', button.dataset.tab === tab.name);
   }
-  elements.viewer.hidden = !tab.showsViewer;
+  showViewer(tab.showsViewer);
   renderList();
+}
+
+function showViewer(visible) {
+  elements.viewer.hidden = !visible;
+  elements.splitter.hidden = !visible;
+}
+
+// Dragging the bar between the view and the details resizes the view; the height is remembered.
+function wireSplitter() {
+  const saved = parseFloat(localStorage.getItem(VIEWER_HEIGHT_KEY));
+  if (saved > 0) elements.viewer.style.flexBasis = `${saved}px`;
+  elements.splitter.addEventListener('pointerdown', (event) => {
+    elements.splitter.setPointerCapture(event.pointerId);
+    elements.splitter.classList.add('dragging');
+  });
+  elements.splitter.addEventListener('pointermove', (event) => {
+    if (!elements.splitter.hasPointerCapture(event.pointerId)) return;
+    const top = elements.viewer.getBoundingClientRect().top;
+    const room = elements.viewer.parentElement.getBoundingClientRect().bottom - top;
+    const height = Math.min(Math.max(event.clientY - top, 160), room - 80);
+    elements.viewer.style.flexBasis = `${height}px`;
+    localStorage.setItem(VIEWER_HEIGHT_KEY, String(height));
+  });
+  elements.splitter.addEventListener('pointerup', () => elements.splitter.classList.remove('dragging'));
 }
 
 // A hash is "<tab>:<path>"; a bare path is a particle system, as in links from before the tabs.
@@ -264,7 +296,7 @@ function renderDetails() {
   const lifeSpan = data.LifeSpan > 0 ? `${data.LifeSpan} s` : 'unlimited';
   const facts = [`System life: ${lifeSpan}`, `Spawners: ${(data.Spawners ?? []).length}`];
   if (data.IsImportant) facts.push('Important');
-  panel.append(element('p', facts.join('  |  '), 'facts'));
+  panel.append(chips(facts));
   if (data.$Comment) panel.append(element('p', `Comment: ${data.$Comment}`, 'comment'));
 
   const groups = (data.Spawners ?? []).map((group) => ({ group, spawner: resolveSpawner(group.SpawnerId, system.path) }));
@@ -373,6 +405,7 @@ function wireControls() {
     event.preventDefault();
   });
   wireCamera();
+  wireSplitter();
 }
 
 function togglePause() {
@@ -436,7 +469,7 @@ function startLoop() {
     }
     if (!state.paused) for (const tab of Object.values(state.tabs)) tab.step?.(dt);
     renderer.shake = state.tabs.screen.cameraShake();
-    const particles = state.tab === state.tabs.models ? null : state.instance;
+    const particles = PARTICLE_TABS.has(state.tab.name) ? state.instance : null;
     renderer.draw(particles);
     elements.stats.textContent = particles ? `${particles.particleCount} particles, ${particles.age.toFixed(1)} s` : '';
     requestAnimationFrame(frame);

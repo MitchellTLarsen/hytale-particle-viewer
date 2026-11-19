@@ -25,10 +25,12 @@ const OPEN_LIMIT = 12;
 
 const categoryOf = (source) => CATEGORIES.find(([prefix]) => source.startsWith(prefix))?.[1] ?? OTHER;
 
+// The heading already names the category, so the detail keeps only the folders below it, the key and the hop.
 function describe({ source, field, via }) {
   const [path, volume] = source.split('#');
   const name = volume ?? path.split('/').pop().replace(/\.json$/, '');
-  const where = volume !== undefined ? `${path.split('/')[2]} instance` : path.replace(/^Server\//, '');
+  const prefix = CATEGORIES.find(([folder]) => path.startsWith(folder))?.[0] ?? '';
+  const where = volume !== undefined ? `${path.split('/')[2]} instance` : path.slice(prefix.length).split('/').slice(0, -1).join('/');
   return { name, detail: [where, field, via && `via ${via}`].filter(Boolean).join('  ·  ') };
 }
 

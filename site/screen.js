@@ -1,6 +1,6 @@
 // Screen tab: camera shakes and view bobbing (applied to the preview camera) and screen overlays.
 
-import { element, formatNumber, table } from './dom.js';
+import { chips, element, formatNumber, table } from './dom.js';
 import { rawJson } from './links.js';
 import { Shake } from './shake.js';
 
@@ -52,7 +52,7 @@ export function createScreenTab(data, details, overlay) {
     overlay.hidden = false;
     details.append(
       element('p', `Common/${item.texture}`, 'path'),
-      element('p', 'Drawn over the preview, stretched to cover it.', 'facts'),
+      element('p', 'Drawn over the preview, stretched to cover it.', 'muted'),
     );
   }
 
@@ -66,7 +66,7 @@ export function createScreenTab(data, details, overlay) {
     const facts = [];
     if (effect) facts.push(`Camera effect ${effect.id}: ${describeIntensity(effect.data.Intensity)}`);
     if (kindOf(item) === 'ViewBobbing') facts.push('Plays while the player moves this way');
-    details.append(element('p', facts.join('  |  '), 'facts'));
+    details.append(chips(facts));
 
     const actions = element('div', undefined, 'actions');
     const perspectives = Object.keys(PERSPECTIVES).filter((key) => item.data[key]);
@@ -115,7 +115,7 @@ export function createScreenTab(data, details, overlay) {
       }
     }
     const container = details.querySelector('.profile');
-    container.replaceChildren(element('p', timing.join('  |  '), 'facts'));
+    container.replaceChildren(chips(timing));
     container.append(rows.length ? table(['Motion', 'Noise', 'Frequency', 'Amplitude', 'Clamp'], rows) : element('p', 'No motion.'));
   }
 
