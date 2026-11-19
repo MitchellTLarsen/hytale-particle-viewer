@@ -2,7 +2,7 @@
 // Common sensor, action and effect types get a sentence; the rest show as their type and parameters.
 
 import { button, chips, element } from './dom.js';
-import { graphView, roleFlow, ruleSource, volumeFlow } from './flow.js';
+import { fillParameters, graphView, roleFlow, ruleSource, volumeFlow } from './flow.js';
 import { valueNode } from './links.js';
 import { weatherCard } from './world.js';
 
@@ -213,8 +213,10 @@ function roleCard(role, context) {
   if (role.Type === 'Variant') {
     card.append(wrap('p', 'Variant of ', show(role.Reference, 'Reference'), '. It sets:'));
     const changes = element('ul');
+    const filled = fillParameters(role, {}).Modify ?? {};
     for (const [key, value] of Object.entries(role.Modify ?? {})) {
-      changes.append(wrap('li', `${key}: `, show(value, key)));
+      const parameter = value?.Compute && filled[key] !== value ? element('small', `  from ‹${value.Compute}›`, 'muted') : '';
+      changes.append(wrap('li', `${key}: `, show(filled[key] ?? value, key), parameter));
     }
     card.append(changes);
   }

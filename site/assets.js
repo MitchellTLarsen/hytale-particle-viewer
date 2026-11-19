@@ -3,8 +3,10 @@
 // with a model also show that model in the view.
 
 import { behaviourCard } from './behaviour.js';
+import { fillParameters } from './flow.js';
 import { chips, element } from './dom.js';
 import { jsonBlock, valueNode } from './links.js';
+import { worldCards } from './world.js';
 
 // Top-level fields worth a chip above the JSON when present.
 const SUMMARY_KEYS = ['Type', 'Parent', 'Reference', 'Appearance', 'Model', 'MaxHealth', 'StartState'];
@@ -48,6 +50,7 @@ export function createAssetsTab(data, details, models, setViewer, references) {
     pathsByName.get(stem(item.path)).push(item.path);
   }
   const assetPath = (name, folder) => (pathsByName.get(name) ?? []).find((path) => path.startsWith(folder)) ?? null;
+  const iconOf = (name) => icons[assetPath(name, 'Server/Item/Items/')];
   const refsFor = (key) =>
     (references.refs[key] ?? []).map(([source, field]) => ({ source: references.sources[source], field }));
   const cache = new Map();
@@ -82,7 +85,8 @@ export function createAssetsTab(data, details, models, setViewer, references) {
   async function modelOf(path, asset) {
     if (path.startsWith('Server/Models/')) return modelAssetModel(asset);
     if (path.startsWith('Server/NPC/Roles/')) {
-      const appearance = asset.Appearance ?? asset.Modify?.Appearance;
+      const filled = fillParameters(asset, {});
+      const appearance = filled.Appearance ?? filled.Modify?.Appearance;
       const file = typeof appearance === 'string' ? modelAssets.get(appearance) : undefined;
       return file ? modelAssetModel(await load(file)) : null;
     }
@@ -116,7 +120,7 @@ export function createAssetsTab(data, details, models, setViewer, references) {
       return;
     }
     if (ticket !== request) return;
-    const context = { load, assetPath, refsFor };
+    const context = { load, assetPath, refsFor, iconOf, link: valueNode };
     if (volume !== undefined) {
       context.instancePath = file;
       context.volumes = Object.values(asset.Volumes ?? {});
@@ -132,6 +136,9 @@ export function createAssetsTab(data, details, models, setViewer, references) {
     json.open = !card;
     json.append(element('summary', 'JSON'), jsonBlock(asset));
     details.append(...[facts.length && chips(facts), shownModel, card, json].filter(Boolean));
+    worldCards(item.path, asset, context).then((cards) => {
+      if (ticket === request) json.before(...cards);
+    });
 
     const found = await modelOf(item.path, asset).catch(() => null);
     if (ticket !== request || !found) return;

@@ -1029,6 +1029,46 @@ code.signal {
   color: var(--muted);
 }
 
+/* ---------------------------------------------------------------- loot and spawns */
+
+ul.drops {
+  list-style: none;
+  margin: 4px 0;
+  padding-left: 16px;
+  line-height: 1.7;
+}
+
+.card > ul.drops {
+  padding-left: 0;
+}
+
+ul.drops ul.drops {
+  border-left: 1px dashed var(--line);
+  margin-left: 4px;
+}
+
+.chance {
+  display: inline-block;
+  min-width: 48px;
+  color: #e3b341;
+  font-variant-numeric: tabular-nums;
+}
+
+.item img.icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  vertical-align: middle;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.item small,
+ul.drops small {
+  margin-left: 6px;
+  color: var(--muted);
+}
+
 /* ---------------------------------------------------------------- weather strips */
 
 .strip {

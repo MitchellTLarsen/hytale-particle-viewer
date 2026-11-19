@@ -11,6 +11,9 @@ const PREFERRED_FOLDERS = [
   [/Appearance|Model/, 'Server/Models/'],
   [/Interaction/, 'Server/Item/'],
   [/Effect/, 'Server/Entity/Effects/'],
+  [/Droplist|DropList/, 'Server/Drops/'],
+  [/Spawn/, 'Server/NPC/Spawn/'],
+  [/Environment/, 'Server/Environments/'],
   [/Item|Weapon|Drop/, 'Server/Item/Items/'],
   [/Group/, 'Server/NPC/Groups/'],
 ];

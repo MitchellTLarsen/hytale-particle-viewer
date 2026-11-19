@@ -1,6 +1,8 @@
-// World-building cards for the Assets tab: weather colours through the day.
+// World-building cards for the Assets tab: weather through the day, drop lists, spawn rules, and where items
+// drop and NPCs spawn.
 
 import { chips, element } from './dom.js';
+import { fillParameters } from './flow.js';
 
 const HOURS = 24;
 
@@ -75,4 +77,168 @@ export function weatherCard(weather) {
   if (strips.length) card.append(...strips, hourAxis());
   if (curves.length) card.append(chips(curves));
   return card;
+}
+
+// ---------------------------------------------------------------- loot and spawns
+
+const percent = (value) => `${Math.round(value * 1000) / 10}%`;
+
+function itemEntry(name, context, quantity) {
+  const entry = element('span', undefined, 'item');
+  const icon = context.iconOf?.(name);
+  if (icon) {
+    const image = element('img', undefined, 'icon');
+    image.src = 'assets/' + icon;
+    image.alt = '';
+    entry.append(image);
+  }
+  entry.append(context.link(name, 'ItemId'));
+  if (quantity) entry.append(element('small', quantity));
+  return entry;
+}
+
+function quantityOf(item) {
+  const min = item.QuantityMin ?? 1;
+  const max = item.QuantityMax ?? min;
+  return min === max ? `×${min}` : `×${min}–${max}`;
+}
+
+/**
+ * One container as a list item. In a Multiple each child drops when its Weight beats a roll out of 100
+ * (so Weight is a percent chance, 100 by default); a Choice picks one child by Weight against the total,
+ * RollsMin to RollsMax times (server ItemDropContainer classes).
+ */
+function dropItem(container, context, chance) {
+  const item = element('li');
+  const prefix = chance ? element('span', `${chance}  `, 'chance') : '';
+  const children = Array.isArray(container.Containers) ? container.Containers : [];
+  if (container.Type === 'Single' && container.Item) {
+    item.append(prefix, itemEntry(container.Item.ItemId, context, quantityOf(container.Item)));
+  } else if (container.Type === 'Empty') {
+    item.append(prefix, element('span', 'nothing', 'muted'));
+  } else if (container.Type === 'Droplist') {
+    item.append(prefix, 'drop list ', context.link(container.DroplistId, 'DroplistId'));
+  } else if (container.Type === 'Multiple' || container.Type === 'Choice') {
+    const choice = container.Type === 'Choice';
+    const rolls = choice && (container.RollsMin ?? 1) !== (container.RollsMax ?? 1) ? ` (${container.RollsMin}–${container.RollsMax} rolls)` : choice && container.RollsMin > 1 ? ` (${container.RollsMin} rolls)` : '';
+    item.append(prefix, element('strong', choice ? `one of${rolls}:` : 'each of:'));
+    const total = children.reduce((sum, child) => sum + (child.Weight ?? 100), 0) || 1;
+    const list = element('ul', undefined, 'drops');
+    for (const child of children) {
+      const weight = child.Weight ?? 100;
+      list.append(dropItem(child, context, choice ? percent(weight / total) : weight >= 100 ? '' : `${Math.min(weight, 100)}%`));
+    }
+    item.append(list);
+  } else {
+    item.append(prefix, element('code', container.Type ?? '?'));
+  }
+  return item;
+}
+
+function dropTree(drop, context) {
+  const list = element('ul', undefined, 'drops');
+  if (drop?.Container) list.append(dropItem(drop.Container, context, ''));
+  return list;
+}
+
+const SPAWN_SKIP = new Set(['NPCs', 'Environments', '$Comment', 'Model']);
+
+function spawnFacts(spawn) {
+  const facts = [];
+  if (Array.isArray(spawn.DayTimeRange)) facts.push(`Time: ${spawn.DayTimeRange.map(hourLabel).join('–')}`);
+  if (Array.isArray(spawn.LightRanges?.Light)) facts.push(`Light: ${spawn.LightRanges.Light.join('–')}`);
+  for (const [key, value] of Object.entries(spawn)) {
+    if (SPAWN_SKIP.has(key) || key === 'DayTimeRange' || key === 'LightRanges') continue;
+    if (['string', 'number', 'boolean'].includes(typeof value)) facts.push(`${humanize(key)}: ${value}`);
+    else if (Array.isArray(value) && value.every((v) => ['string', 'number'].includes(typeof v))) facts.push(`${humanize(key)}: ${value.join('–')}`);
+  }
+  return facts;
+}
+
+function spawnCard(spawn, context) {
+  const card = element('section', undefined, 'card');
+  card.append(element('h3', 'Spawns'));
+  if (spawn.$Comment) card.append(element('p', spawn.$Comment, 'comment'));
+  const environments = Array.isArray(spawn.Environments) ? spawn.Environments : [];
+  if (environments.length) {
+    const line = element('p');
+    line.append('In ', ...environments.flatMap((name, i) => [i ? ', ' : '', context.link(name, 'EnvironmentId')]));
+    card.append(line);
+  }
+  card.append(chips(spawnFacts(spawn)));
+  const npcs = Array.isArray(spawn.NPCs) ? spawn.NPCs : [];
+  const total = npcs.reduce((sum, npc) => sum + (npc.Weight ?? 1), 0) || 1;
+  const list = element('ul', undefined, 'drops');
+  for (const npc of npcs) {
+    const row = element('li');
+    row.append(element('span', `${percent((npc.Weight ?? 1) / total)}  `, 'chance'), context.link(npc.Id, 'NpcType'));
+    list.append(row);
+  }
+  card.append(list);
+  return card;
+}
+
+function sectionCard(title, rows) {
+  const card = element('section', undefined, 'card');
+  card.append(element('h3', title));
+  const list = element('ul', undefined, 'drops');
+  for (const row of rows) list.append(row);
+  card.append(list);
+  return card;
+}
+
+// Drop lists that name the item, and the NPC roles that use those drop lists.
+async function droppedBy(name, context) {
+  const rows = [];
+  for (const { source } of context.refsFor(`asset:${name}`)) {
+    if (!source.startsWith('Server/Drops/')) continue;
+    const list = source.split('/').pop().replace(/\.json$/, '');
+    const roles = context.refsFor(`asset:${list}`).filter((ref) => ref.source.startsWith('Server/NPC/Roles/'));
+    const row = element('li');
+    row.append(context.link(list, 'DropList'));
+    if (roles.length) {
+      row.append(element('span', '  dropped by  ', 'muted'));
+      roles.forEach((ref, i) => row.append(i ? ', ' : '', context.link(ref.source.split('/').pop().replace(/\.json$/, ''), 'NpcType')));
+    }
+    rows.push(row);
+  }
+  return rows.length ? sectionCard('Dropped by', rows) : null;
+}
+
+// The spawn rules that name a role, each with where and when.
+async function spawnsOf(name, context) {
+  const rows = [];
+  for (const { source } of context.refsFor(`asset:${name}`)) {
+    if (!source.startsWith('Server/NPC/Spawn/')) continue;
+    const spawn = await context.load(source).catch(() => null);
+    const row = element('li');
+    row.append(context.link(source.split('/').pop().replace(/\.json$/, ''), 'SpawnId'));
+    const environments = Array.isArray(spawn?.Environments) ? spawn.Environments : [];
+    if (environments.length) row.append(element('span', `  in ${environments.join(', ')}`, 'muted'));
+    const facts = spawn ? spawnFacts(spawn).filter((fact) => /^(Time|Light)/.test(fact)) : [];
+    if (facts.length) row.append(element('small', `  ${facts.join(', ')}`));
+    rows.push(row);
+  }
+  return rows.length ? sectionCard('Where it spawns', rows) : null;
+}
+
+/**
+ * Extra cards for the Assets tab: drop lists, spawn rules, where items drop, and where NPCs spawn and what
+ * they drop. `context`: {load, refsFor, assetPath, iconOf, link}.
+ */
+export async function worldCards(path, asset, context) {
+  const name = path.split('/').pop().replace(/\.json$/, '');
+  if (path.startsWith('Server/Drops/')) return [sectionCard('Drops', [...dropTree(asset, context).children])];
+  if (path.startsWith('Server/NPC/Spawn/')) return [spawnCard(asset, context)];
+  if (path.startsWith('Server/Item/Items/')) return [await droppedBy(name, context)].filter(Boolean);
+  if (path.startsWith('Server/NPC/Roles/')) {
+    const cards = [await spawnsOf(name, context)];
+    const filled = fillParameters(asset, {});
+    const dropList = filled.DropList ?? filled.Modify?.DropList;
+    const dropPath = typeof dropList === 'string' ? context.assetPath(dropList, 'Server/Drops/') : null;
+    const drop = dropPath ? await context.load(dropPath).catch(() => null) : null;
+    if (drop) cards.push(sectionCard(`Drops (${dropList})`, [...dropTree(drop, context).children]));
+    return cards.filter(Boolean);
+  }
+  return [];
 }
