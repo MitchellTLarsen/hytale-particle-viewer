@@ -123,6 +123,7 @@ export function createAssetsTab(data, details, models, setViewer, references) {
     const context = { load, assetPath, refsFor, iconOf, link: valueNode };
     if (volume !== undefined) {
       context.instancePath = file;
+      context.instance = asset;
       context.volumes = Object.values(asset.Volumes ?? {});
       asset = context.volumes.find((v) => v.Name === volume) ?? {};
     }

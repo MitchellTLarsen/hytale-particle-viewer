@@ -4,6 +4,7 @@
 import { button, chips, element } from './dom.js';
 import { fillParameters, graphView, roleFlow, ruleSource, volumeFlow } from './flow.js';
 import { valueNode } from './links.js';
+import { instanceMap } from './map.js';
 import { weatherCard } from './world.js';
 
 const META_KEYS = new Set(['Type', '$Comment', '$TODO', 'Enabled']);
@@ -62,36 +63,56 @@ const generic = (node, skip) => [code(node.Type ?? '?'), params(node, skip)];
 
 let preferredView = 'flow';
 
-/** A Flow / List switch: the flow (from `buildFlow`, which may be async) is drawn the first time it shows. */
-function views(buildFlow, listParts) {
+/**
+ * A switch between views, each {name, label, render} where render returns a node (or a promise of one); a
+ * view is drawn the first time it shows. The last view picked opens first on the next card that has it.
+ */
+function views(entries) {
   const box = element('div');
   const switcher = element('div', undefined, 'view-switch');
-  const flowBox = element('div');
-  const listBox = element('div');
-  listBox.append(...listParts);
+  const panes = new Map(entries.map((entry) => [entry.name, element('div')]));
   const buttons = new Map();
-  let drawn = false;
-  const show = (view) => {
-    preferredView = view;
-    flowBox.hidden = view !== 'flow';
-    listBox.hidden = view !== 'list';
-    for (const [name, control] of buttons) control.classList.toggle('active', name === view);
-    if (view !== 'flow' || drawn) return;
-    drawn = true;
-    flowBox.append(element('p', 'Drawing...', 'muted'));
+  const drawn = new Set();
+  const show = (name) => {
+    preferredView = name;
+    for (const [paneName, pane] of panes) pane.hidden = paneName !== name;
+    for (const [buttonName, control] of buttons) control.classList.toggle('active', buttonName === name);
+    if (drawn.has(name)) return;
+    drawn.add(name);
+    const pane = panes.get(name);
+    pane.append(element('p', 'Drawing...', 'muted'));
     Promise.resolve()
-      .then(buildFlow)
-      .then((graph) => flowBox.replaceChildren(graph?.nodes.length ? graphView(graph) : element('p', 'Nothing to draw here.', 'muted')))
-      .catch((error) => flowBox.replaceChildren(element('p', `Could not draw the flow (${error.message}).`, 'error')));
+      .then(entries.find((entry) => entry.name === name).render)
+      .then((node) => pane.replaceChildren(node ?? element('p', 'Nothing to draw here.', 'muted')))
+      .catch((error) => pane.replaceChildren(element('p', `Could not draw this (${error.message}).`, 'error')));
   };
-  for (const [name, label] of [['flow', 'Flow'], ['list', 'List']]) {
-    buttons.set(name, button(label, () => show(name)));
-    switcher.append(buttons.get(name));
+  for (const entry of entries) {
+    buttons.set(entry.name, button(entry.label, () => show(entry.name)));
+    switcher.append(buttons.get(entry.name));
   }
-  box.append(switcher, flowBox, listBox);
-  show(preferredView);
+  box.append(switcher, ...panes.values());
+  show(panes.has(preferredView) ? preferredView : entries[0].name);
   return box;
 }
+
+const flowView = (build) => ({
+  name: 'flow',
+  label: 'Flow',
+  render: async () => {
+    const graph = await build();
+    return graph?.nodes.length ? graphView(graph) : null;
+  },
+});
+
+const listView = (parts) => ({
+  name: 'list',
+  label: 'List',
+  render: () => {
+    const box = element('div');
+    box.append(...parts);
+    return box;
+  },
+});
 
 const text = (...parts) => phrase(...parts).textContent;
 
@@ -229,15 +250,18 @@ function roleCard(role, context) {
   };
   if (listOf(role.Instructions).length) {
     card.append(
-      views(flow, [
-        element('p', 'Rules run from the top. The first rule whose condition holds runs and stops the list, unless it keeps checking.', 'muted'),
-        ruleList(listOf(role.Instructions)),
+      views([
+        flowView(flow),
+        listView([
+          element('p', 'Rules run from the top. The first rule whose condition holds runs and stops the list, unless it keeps checking.', 'muted'),
+          ruleList(listOf(role.Instructions)),
+        ]),
       ]),
     );
   } else if (role.Reference && context) {
     card.append(
       wrap('p', 'Its rules come from the template ', show(role.Reference, 'Reference'), '. The flow fills in the values this variant sets.'),
-      views(flow, [wrap('p', 'Open the template ', show(role.Reference, 'Reference'), ' for its rules as a list.')]),
+      views([flowView(flow), listView([wrap('p', 'Open the template ', show(role.Reference, 'Reference'), ' for its rules as a list.')])]),
     );
   }
   return card;
@@ -340,7 +364,19 @@ function volumeCard(volume, context) {
     describeCondition: (condition) => text(describeCondition(condition)),
     describeEffect: (effect) => text(describeEffect(effect)),
   };
-  card.append(views(() => flowContext && volumeFlow(volume, flowContext), parts));
+  const entries = [flowView(() => flowContext && volumeFlow(volume, flowContext)), listView(parts)];
+  if (context?.instance) {
+    entries.push({
+      name: 'map',
+      label: 'Map',
+      render: async () => {
+        const points = await context.load(context.instancePath.replace(/TriggerVolumeData\.json$/, 'PointData.json')).catch(() => null);
+        const hrefFor = (name) => `#assets:${encodeURIComponent(`${context.instancePath}#${name}`)}`;
+        return instanceMap({ instance: context.instance, points, focus: volume.Name, hrefFor });
+      },
+    });
+  }
+  card.append(views(entries));
   return card;
 }
 

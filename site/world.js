@@ -3,6 +3,7 @@
 
 import { chips, element } from './dom.js';
 import { fillParameters, graphBuilder, graphView } from './flow.js';
+import { instanceMap } from './map.js';
 
 const HOURS = 24;
 
@@ -222,6 +223,21 @@ async function spawnsOf(name, context) {
   return rows.length ? sectionCard('Where it spawns', rows) : null;
 }
 
+// ---------------------------------------------------------------- instance map
+
+// The whole instance's volumes and points, for its config page.
+async function mapCard(path, context) {
+  const folder = path.replace(/config\.json$/, 'resources/');
+  const [instance, points] = await Promise.all(
+    ['TriggerVolumeData.json', 'PointData.json'].map((file) => context.load(folder + file).catch(() => null)),
+  );
+  if (!Object.keys(instance?.Volumes ?? {}).length && !Object.keys(points?.Points ?? {}).length) return null;
+  const card = element('section', undefined, 'card');
+  const hrefFor = (name) => `#assets:${encodeURIComponent(`${folder}TriggerVolumeData.json#${name}`)}`;
+  card.append(element('h3', 'Map'), instanceMap({ instance, points, hrefFor }));
+  return card;
+}
+
 // ---------------------------------------------------------------- crafting
 
 const MAX_RECIPES = 16;
@@ -303,6 +319,7 @@ async function craftingCard(path, asset, context) {
  */
 export async function worldCards(path, asset, context) {
   const name = path.split('/').pop().replace(/\.json$/, '');
+  if (/^Server\/Instances\/.+\/config\.json$/.test(path)) return [await mapCard(path, context)].filter(Boolean);
   if (path.startsWith('Server/Drops/')) return [sectionCard('Drops', [...dropTree(asset, context).children])];
   if (path.startsWith('Server/NPC/Spawn/')) return [spawnCard(asset, context)];
   if (path.startsWith('Server/Item/Recipes/')) return [await craftingCard(path, asset, context)].filter(Boolean);
