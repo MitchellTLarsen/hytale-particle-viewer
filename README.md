@@ -64,7 +64,8 @@ available, so the previews are close guesses rather than exact matches. Known ga
 
 - Volume (decibels), pitch (semitones), random ranges, `Probability`, `StartDelay` and
   `Looping` follow the codec docs. Fields left out of an event come from its `Parent`.
-- Volume above 0 dB plays at full browser volume (an `<audio>` element cannot go louder).
+- The Volume slider scales every sound; it starts at 25% and the browser remembers it.
+- Volume above 0 dB plays at full slider volume (an `<audio>` element cannot go louder).
 - **Not simulated:** distance attenuation and 3D position, `SpatialBlend`, audio categories,
   ducking, state bindings, `MaxInstance`, round-robin, `FadeIn`, `MaxStartOffset`,
   `ProbabilityRerollDelay`.

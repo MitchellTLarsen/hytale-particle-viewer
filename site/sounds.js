@@ -2,6 +2,7 @@
 
 import { button, element, formatNumber, rawJson, table } from './dom.js';
 
+const VOLUME_KEY = 'soundVolume';
 const decibelsToGain = (decibels) => Math.min(1, 10 ** (decibels / 20));
 const randomBetween = (min = 0, max = 0) => min + Math.random() * (max - min);
 const fileName = (file) => file.split('/').pop();
@@ -10,6 +11,7 @@ export function createSoundsTab(data, details) {
   const byId = new Map(data.sounds.map((sound) => [sound.id, sound]));
   let playing = [];
   let autoPlay = true;
+  let volume = parseFloat(localStorage.getItem(VOLUME_KEY) ?? '0.25');
   let status = null;
 
   // Parent fields are inherited unless the child sets them, as in the server's codec.
@@ -42,14 +44,32 @@ export function createSoundsTab(data, details) {
           : `Could not play the sound: ${error.message}`;
   }
 
-  function playFile(file, { volume = 0, pitch = 0, loop = false, delay = 0 } = {}) {
+  function playFile(file, { decibels = 0, pitch = 0, loop = false, delay = 0 } = {}) {
     const audio = new Audio('assets/' + file);
-    audio.volume = decibelsToGain(volume);
+    const gain = decibelsToGain(decibels);
+    audio.volume = gain * volume;
     audio.preservesPitch = false;
     audio.playbackRate = 2 ** (pitch / 12);
     audio.loop = loop;
     const timer = setTimeout(() => audio.play().catch(showError), delay * 1000);
-    playing.push({ audio, timer });
+    playing.push({ audio, timer, gain });
+  }
+
+  function volumeSlider() {
+    const slider = element('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '1';
+    slider.step = '0.01';
+    slider.value = String(volume);
+    slider.addEventListener('input', () => {
+      volume = parseFloat(slider.value);
+      localStorage.setItem(VOLUME_KEY, String(volume));
+      for (const entry of playing) entry.audio.volume = entry.gain * volume;
+    });
+    const label = element('label', 'Volume ');
+    label.append(slider);
+    return label;
   }
 
   function play(event) {
@@ -60,7 +80,7 @@ export function createSoundsTab(data, details) {
       if (files.length === 0 || Math.random() * 100 >= (layer.Probability ?? 100)) continue;
       const random = layer.RandomSettings ?? {};
       playFile(files[Math.floor(Math.random() * files.length)], {
-        volume: (event.Volume ?? 0) + (layer.Volume ?? 0) + randomBetween(random.MinVolume, random.MaxVolume),
+        decibels: (event.Volume ?? 0) + (layer.Volume ?? 0) + randomBetween(random.MinVolume, random.MaxVolume),
         pitch: (event.Pitch ?? 0) + randomBetween(random.MinPitch, random.MaxPitch),
         loop: Boolean(layer.Looping),
         delay: layer.StartDelay ?? 0,
@@ -90,7 +110,7 @@ export function createSoundsTab(data, details) {
     const autoPlayLabel = element('label');
     autoPlayLabel.append(autoPlayToggle, ' Play on select');
     const actions = element('div', undefined, 'actions');
-    actions.append(button('Play', () => play(event)), button('Stop', stop), autoPlayLabel);
+    actions.append(button('Play', () => play(event)), button('Stop', stop), volumeSlider(), autoPlayLabel);
     status = element('p', '', 'error');
     details.append(actions, status);
 
@@ -107,10 +127,10 @@ export function createSoundsTab(data, details) {
     const rows = layers.map((layer, index) => {
       const files = element('div');
       for (const file of layer.Files ?? []) {
-        const volume = (event.Volume ?? 0) + (layer.Volume ?? 0);
+        const decibels = (event.Volume ?? 0) + (layer.Volume ?? 0);
         const play = () => {
           stop();
-          playFile(file, { volume, pitch: event.Pitch ?? 0 });
+          playFile(file, { decibels, pitch: event.Pitch ?? 0 });
         };
         const node = button(fileName(file), play, 'file');
         node.title = file;
