@@ -1,6 +1,7 @@
 // Assets tab: every server and cosmetic JSON asset (roles, model assets, items, interactions, effects, trigger
 // volumes and the rest), shown as JSON whose names link to what they point at.
 
+import { behaviourCard } from './behaviour.js';
 import { element } from './dom.js';
 import { jsonBlock } from './links.js';
 
@@ -51,7 +52,11 @@ export function createAssetsTab(data, details) {
       (key) => `${key}: ${asset[key]}`,
     );
     if (facts.length) details.append(element('p', facts.join('  |  '), 'facts'));
-    details.append(jsonBlock(asset));
+    const card = behaviourCard(item.path, asset);
+    const json = element('details');
+    json.open = !card;
+    json.append(element('summary', 'JSON'), jsonBlock(asset));
+    details.append(...[card, json].filter(Boolean));
   }
 
   return {

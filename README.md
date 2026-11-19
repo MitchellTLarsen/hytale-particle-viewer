@@ -10,6 +10,9 @@ A static web page that browses Hytale's effects and models from `Assets.zip`, in
   and animations.
 - **Assets:** every server and cosmetic JSON asset (NPC roles, model assets, items, interactions,
   entity effects, drops, spawns and so on), plus each trigger volume in an instance on its own.
+  NPC roles, interactions and trigger volumes also get a plain-English card: a role's states and
+  rules ("When state is Idle and a player is within 64 blocks in line of sight: start timer..."),
+  an interaction's steps, a volume's rules by event with their delays.
 
 A **Used by** panel on the right lists the server assets that use the picked item (NPC roles,
 items and blocks, interactions, entity effects, trigger volumes and so on), when there are any;
@@ -58,8 +61,8 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
 - `site/render.js` draws the particles as textured quads and the picked model, with an orbit camera.
 - `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab;
   `site/models.js`, `site/blockymodel.js` and `site/blockyanim.js` are the Models tab.
-- `site/assets.js` is the Assets tab, `site/related.js` the Used by panel and `site/links.js`
-  the linked JSON views.
+- `site/assets.js` is the Assets tab, `site/behaviour.js` its cards, `site/related.js` the Used
+  by panel and `site/links.js` the linked JSON views.
 - `site/app.js` is the tabs, the list, the particle details and the controls.
 
 Field meanings come from the documentation strings in the server's asset codecs in the
@@ -148,3 +151,14 @@ available, so the previews are close guesses rather than exact matches. Known ga
   id-like key (`...Id`, `Parent`, `Reference`, `Appearance`). So "used by" can list a file that
   meant another asset of the same name, and a link to a shared name opens the folder the key
   suggests (`NpcType` a role, `Appearance` a model asset and so on), else the first match.
+
+### Behaviour cards
+
+- Rule order follows the server's instruction docs: the first rule whose sensor holds runs and
+  ends the list unless it has `Continue` ("then keeps checking the next rules").
+- The wording for sensors and actions ("a player is within 24 blocks in line of sight", "start
+  timer ... at 30 s") is read from their parameter names, not from the server code. Types
+  without wording show as their type and parameters; `‹Name›` is a template parameter.
+- A rule that uses a shared component (`Reference`) links to it rather than expanding it.
+- A trigger volume's effects run when the conditions with the same event and `Entry` pass
+  (verified in the server's `TriggerVolumeTickingSystem`); "rule 2" is `Entry` 1.

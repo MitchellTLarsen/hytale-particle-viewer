@@ -39,6 +39,17 @@ export function configureLinks({ models, overlays, particles, sounds, screen, as
   };
 }
 
+const hrefFor = (target) => '#' + target.replace(/:(.*)$/, (_, path) => ':' + encodeURIComponent(path));
+
+/** A link when the string names something the viewer can show, else plain text. */
+export function valueNode(value, key = '') {
+  const target = linkFor(value, key);
+  if (!target) return document.createTextNode(value);
+  const link = element('a', value);
+  link.href = hrefFor(target);
+  return link;
+}
+
 /** A <pre> of pretty-printed JSON whose linkable strings are links. */
 export function jsonBlock(data) {
   const pre = element('pre');
@@ -67,7 +78,7 @@ export function jsonBlock(data) {
       return;
     }
     const link = element('a', JSON.stringify(value));
-    link.href = '#' + target.replace(/:(.*)$/, (_, path) => ':' + encodeURIComponent(path));
+    link.href = hrefFor(target);
     pre.append(text, link);
     text = '';
   };
