@@ -1,6 +1,7 @@
 // Screen tab: camera shakes and view bobbing (applied to the preview camera) and screen overlays.
 
-import { element, formatNumber, rawJson, table } from './dom.js';
+import { element, formatNumber, table } from './dom.js';
+import { rawJson } from './links.js';
 import { Shake } from './shake.js';
 
 const REPLAY_PAUSE = 0.6;
@@ -52,12 +53,7 @@ export function createScreenTab(data, details, overlay) {
     details.append(
       element('p', `Common/${item.texture}`, 'path'),
       element('p', 'Drawn over the preview, stretched to cover it.', 'facts'),
-      element('h3', 'Used by'),
     );
-    if (item.usedBy.length === 0) details.append(element('p', 'No server asset references this image.'));
-    const list = element('ul');
-    for (const path of item.usedBy) list.append(element('li', path));
-    details.append(list);
   }
 
   function showShake(item) {

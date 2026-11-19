@@ -6,7 +6,16 @@ A static web page that browses Hytale's effects and models from `Assets.zip`, in
 - **Sounds:** every sound event, playable in the browser.
 - **Screen:** camera shakes and view bobbing (applied to the preview camera) and the
   full-screen overlay images (fire, poison, spyglass and so on).
-- **Models:** every `.blockymodel` (NPCs, characters, items, blocks, cosmetics) with its texture.
+- **Models:** every `.blockymodel` (NPCs, characters, items, blocks, cosmetics) with its texture
+  and animations.
+- **Assets:** every server and cosmetic JSON asset (NPC roles, model assets, items, interactions,
+  entity effects, drops, spawns and so on), plus each trigger volume in an instance on its own.
+
+A **Used by** panel on the right lists the server assets that use the picked item (NPC roles,
+items and blocks, interactions, entity effects, trigger volumes and so on), when there are any;
+each entry opens in the Assets tab. In every JSON view, names of things the viewer can show are
+links: a role's `Appearance` opens its model asset, the asset's `Model` opens the model, an
+interaction's `SystemId` opens the particle system, and so on.
 
 No dependencies beyond Python 3 and a browser.
 
@@ -28,12 +37,18 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
 
 ## How it works
 
-- `build_site.py` copies the effect and model assets into four JSON files and copies the
-  textures, sound files and models they reference from `Common/`:
+- `build_site.py` copies the effect and model assets into six JSON files, copies the textures,
+  sound files and models they reference from `Common/`, and copies every scanned server and
+  cosmetic JSON file to `site/data/json/` for the Assets tab:
   - `particles.json`: `Server/Particles/**/*.particlesystem` and `*.particlespawner`.
   - `sounds.json`: `Server/Audio/SoundEvents/**/*.json`.
   - `screen.json`: `Server/Camera/**/*.json` (camera shakes, camera effects, view bobbing) and
-    the `Common/ScreenEffects/*.png` overlays with the server assets that reference them.
+    the `Common/ScreenEffects/*.png` overlays.
+  - `references.json`: for each particle system, sound event, camera asset, model, model asset,
+    overlay and server asset, the server and cosmetic assets that mention it (trigger volumes in
+    instances by volume name). `Server/Prefabs`, `Server/World` and `Server/HytaleGenerator` are
+    not scanned.
+  - `assets.json`: the list for the Assets tab.
   - `models.json`: every `Common/**/*.blockymodel` with its textures. A texture comes from the
     server or cosmetic assets that pair it with the model (`Texture`, `CustomModelTexture`,
     `GreyscaleTexture`), most used first; failing that, from images beside the model. Animations
@@ -43,6 +58,8 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
 - `site/render.js` draws the particles as textured quads and the picked model, with an orbit camera.
 - `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab;
   `site/models.js`, `site/blockymodel.js` and `site/blockyanim.js` are the Models tab.
+- `site/assets.js` is the Assets tab, `site/related.js` the Used by panel and `site/links.js`
+  the linked JSON views.
 - `site/app.js` is the tabs, the list, the particle details and the controls.
 
 Field meanings come from the documentation strings in the server's asset codecs in the
@@ -117,3 +134,17 @@ available, so the previews are close guesses rather than exact matches. Known ga
   opacity are cut out, so glass-like parts are either solid or missing.
 - 326 models have no texture to be found (mostly block structures that take their block's
   textures) and are drawn grey.
+
+### Used by
+
+- Model files and overlays match by path. Ids of particle systems, sound events, camera assets
+  and model assets only count under a key that names their kind (`System`/`Particle`, `Sound`,
+  `Camera`/`Shake`/`Bobbing`, `Appearance`/`Model`), so a reference under another key is missed.
+- NPC roles reach a model through a model asset: the role's `Appearance` names the asset, the
+  asset's `Model` names the file. Roles that only inherit an appearance from a template are not
+  linked to it.
+- Server assets are named by their file name, which is not unique (1346 names are shared, such
+  as a role and its model asset). An asset name counts when it has an underscore, or under an
+  id-like key (`...Id`, `Parent`, `Reference`, `Appearance`). So "used by" can list a file that
+  meant another asset of the same name, and a link to a shared name opens the folder the key
+  suggests (`NpcType` a role, `Appearance` a model asset and so on), else the first match.

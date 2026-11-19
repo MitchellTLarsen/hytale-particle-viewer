@@ -1,7 +1,10 @@
 // Page wiring: loads the data, switches tabs, lists items, shows particle details and runs the preview loop.
 
+import { createAssetsTab } from './assets.js';
 import { element, formatNumber } from './dom.js';
+import { configureLinks, rawJson } from './links.js';
 import { createModelsTab } from './models.js';
+import { createRelatedPanel } from './related.js';
 import { Renderer } from './render.js';
 import { createScreenTab } from './screen.js';
 import { SystemInstance } from './sim.js';
@@ -32,6 +35,7 @@ const elements = {
   canvas: document.getElementById('canvas'),
   overlay: document.getElementById('overlay'),
   details: document.getElementById('details'),
+  related: document.getElementById('related'),
   restart: document.getElementById('restart'),
   pause: document.getElementById('pause'),
   speed: document.getElementById('speed'),
@@ -43,6 +47,7 @@ const elements = {
 const state = {
   tabs: {},
   tab: null,
+  related: null,
   selected: {},
   systems: [],
   spawnersById: new Map(),
@@ -81,9 +86,10 @@ async function fetchJson(path) {
 }
 
 async function loadData() {
-  const [data, sounds, screen, models] = await Promise.all(
-    ['particles', 'sounds', 'screen', 'models'].map((name) => fetchJson(`data/${name}.json`)),
+  const [data, sounds, screen, models, references, assets] = await Promise.all(
+    ['particles', 'sounds', 'screen', 'models', 'references', 'assets'].map((name) => fetchJson(`data/${name}.json`)),
   );
+  state.related = createRelatedPanel(references, elements.related);
   state.systems = data.systems;
   state.problems = data.problems ?? [];
   for (const spawner of data.spawners) {
@@ -103,9 +109,36 @@ async function loadData() {
     createSoundsTab(sounds, elements.details),
     createScreenTab(screen, elements.details, elements.overlay),
     createModelsTab(models, elements.details, renderer),
+    createAssetsTab(assets, elements.details),
   ]) {
     state.tabs[tab.name] = tab;
   }
+  configureLinks(linkTargets());
+}
+
+// Maps from strings in the data to the "<tab>:<path>" that shows them (see links.js).
+function linkTargets() {
+  const { sounds, screen, models, assets } = state.tabs;
+  const targets = (tab, items, keyOf) => new Map(items.map((item) => [keyOf(item), `${tab}:${item.path}`]));
+  const particles = new Map();
+  for (const system of state.systems) {
+    if (!particles.has(system.id) || !isHiddenFolder(system.path)) particles.set(system.id, `particles:${system.path}`);
+  }
+  const files = assets.items.filter((item) => !item.path.includes('#'));
+  const assetHashes = new Map();
+  for (const item of files) {
+    const name = item.path.split('/').pop().replace(/\.json$/, '');
+    if (!assetHashes.has(name)) assetHashes.set(name, []);
+    assetHashes.get(name).push(`assets:${item.path}`);
+  }
+  return {
+    models: targets('models', models.items, (item) => `${item.path}.blockymodel`),
+    overlays: targets('screen', screen.items.filter((item) => item.texture), (item) => item.texture),
+    particles,
+    sounds: targets('sounds', sounds.items, (item) => item.id),
+    screen: targets('screen', screen.items.filter((item) => !item.texture), (item) => item.id),
+    assets: assetHashes,
+  };
 }
 
 // ---------------------------------------------------------------- tabs and list
@@ -192,6 +225,7 @@ function selectFromHash() {
   if (tab !== state.tab) showTab(tab);
   state.selected[tab.name] = item;
   tab.select(item);
+  state.related.show(tab.name, item);
   markSelected();
 }
 
@@ -248,13 +282,13 @@ function renderDetails() {
 
   panel.append(spawnerTable(groups));
 
-  const json = element('details');
-  json.append(element('summary', 'Raw JSON'));
-  json.append(element('h3', `${system.id}.particlesystem`), element('pre', JSON.stringify(data, null, 2)));
-  for (const spawner of new Set(groups.map((g) => g.spawner).filter(Boolean))) {
-    json.append(element('h3', `${spawner.path}.particlespawner`), element('pre', JSON.stringify(spawner.data, null, 2)));
-  }
-  panel.append(json);
+  const spawners = [...new Set(groups.map((g) => g.spawner).filter(Boolean))];
+  panel.append(
+    rawJson([
+      [`${system.id}.particlesystem`, data],
+      ...spawners.map((spawner) => [`${spawner.path}.particlespawner`, spawner.data]),
+    ]),
+  );
 }
 
 function spawnerTable(groups) {

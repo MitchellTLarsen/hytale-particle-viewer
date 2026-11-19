@@ -30,6 +30,13 @@ SPAWNER_SUFFIX = ".particlespawner"
 MODEL_SUFFIX = ".blockymodel"
 # Keys that sit beside a model path and name its texture (items and models, blocks, cosmetics).
 TEXTURE_KEYS = ("Texture", "CustomModelTexture", "GreyscaleTexture")
+# A reference to an id of each kind counts only under a key containing one of these words.
+REFERENCE_KEY_HINTS = {
+    "particle": ("System", "Particle"),
+    "sound": ("Sound",),
+    "camera": ("Camera", "Shake", "Bobbing"),
+    "modelAsset": ("Appearance", "Model"),
+}
 # Large folders that never reference overlays or models; skipping them keeps the scans fast.
 SCAN_SKIP = ("Server/Prefabs/", "Server/World/", "Server/HytaleGenerator/")
 
@@ -43,6 +50,7 @@ def main():
 
     problems = []
     assets_dir = args.out / "assets"
+    data_dir = args.out / "data"
     with zipfile.ZipFile(args.assets) as assets:
         names = set(assets.namelist())
         systems = read_assets(assets, names, PARTICLES_ROOT, SYSTEM_SUFFIX, problems)
@@ -65,17 +73,29 @@ def main():
         model_files |= {a["file"] for m in models for a in m.get("animations", [])}
         copied += copy_files(assets, names, model_files, assets_dir, problems)
 
-    data_dir = args.out / "data"
+        json_files = server_json_files(names)
+        known = {
+            "particle": {s["id"] for s in systems},
+            "sound": {s["id"] for s in sounds},
+            "camera": {c["id"] for c in camera},
+            "modelAsset": {PurePosixPath(n).stem for n in names if n.startswith(MODEL_ASSETS_ROOT) and n.endswith(".json")},
+            "asset": {PurePosixPath(n).stem for n in json_files},
+        }
+        references, asset_paths = read_references(assets, json_files, known)
+        copied += copy_json_files(assets, json_files, data_dir / "json")
+
     data_dir.mkdir(parents=True, exist_ok=True)
     write_json(data_dir / "particles.json", {"systems": systems, "spawners": spawners, "problems": problems})
     write_json(data_dir / "sounds.json", {"sounds": sounds})
     write_json(data_dir / "screen.json", {"camera": camera, "overlays": overlays})
     write_json(data_dir / "models.json", {"models": models})
+    write_json(data_dir / "references.json", references)
+    write_json(data_dir / "assets.json", {"assets": asset_paths})
 
     print(
         f"{len(systems)} systems, {len(spawners)} spawners, {len(sounds)} sound events, "
         f"{len(camera)} camera assets, {len(overlays)} overlays, {len(models)} models, "
-        f"{copied} files -> {args.out}"
+        f"{len(asset_paths)} server assets, {copied} files -> {args.out}"
     )
     for problem in problems:
         print("WARNING:", problem)
@@ -108,23 +128,85 @@ def check_spawner_refs(systems, spawners, problems):
                 problems.append(f"{system['path']}: unknown SpawnerId {spawner_id!r}")
 
 
+def server_json_files(names):
+    return sorted(
+        n for n in names if n.startswith(("Server/", "Cosmetics/")) and n.endswith(".json") and not n.startswith(SCAN_SKIP)
+    )
+
+
+def names_an_asset(value, key):
+    """Asset ids match loosely: one with an underscore under any key, a one-word id only under an id-like key."""
+    return "_" in value or key.endswith("Id") or key in ("Parent", "Reference", "Appearance")
+
+
+def read_references(assets, json_files, known):
+    """Index which server and cosmetic assets mention each viewer asset, and list the assets.
+
+    Returns ({"sources": [...], "refs": {"<kind>:<id>": [[source index, key], ...]}}, asset paths).
+    A source or asset path is a file path, or "<TriggerVolumeData path>#<volume name>" for a
+    volume in an instance. Model files and screen overlays match by path; ids of the other kinds
+    only count under a key that names their kind, so a sound and a tag that share a word don't
+    get mixed up.
+    """
+    sources, refs, seen, asset_paths = [], collections.defaultdict(list), set(), []
+
+    def add(kind, value, source, key):
+        if (kind, value, source) in seen:
+            return
+        seen.add((kind, value, source))
+        if not sources or sources[-1] != source:
+            sources.append(source)
+        refs[f"{kind}:{value}"].append([len(sources) - 1, key])
+
+    def walk(value, source, key=""):
+        if isinstance(value, dict):
+            for child_key, child in value.items():
+                walk(child, source, child_key)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child, source, key)
+        elif isinstance(value, str):
+            if value.endswith(MODEL_SUFFIX):
+                add("model", value, source, key)
+            elif value.startswith("ScreenEffects/"):
+                add("texture", value, source, key)
+            for kind, hints in REFERENCE_KEY_HINTS.items():
+                if value in known[kind] and any(hint in key for hint in hints):
+                    add(kind, value, source, key)
+            if value in known["asset"] and names_an_asset(value, key):
+                add("asset", value, source, key)
+
+    for name in json_files:
+        try:
+            data = json.loads(assets.read(name))
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if name.endswith("/TriggerVolumeData.json"):
+            for volume in data.get("Volumes", {}).values():
+                source = f"{name}#{volume.get('Name', '')}"
+                asset_paths.append(source)
+                walk(volume, source)
+        else:
+            asset_paths.append(name)
+            walk(data, name)
+    return {"sources": sources, "refs": refs}, asset_paths
+
+
+def copy_json_files(assets, files, out_dir):
+    """Copy each zip entry to out_dir/<entry path>, for the Assets tab to load."""
+    for name in files:
+        if ".." in PurePosixPath(name).parts:
+            continue
+        target = out_dir / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(assets.read(name))
+    return len(files)
+
+
 def read_overlays(assets, names):
-    """Return [{id, path, texture, usedBy}] for each screen overlay image."""
+    """Return [{id, path, texture}] for each screen overlay image."""
     textures = sorted(n[len(COMMON_ROOT) :] for n in names if n.startswith(OVERLAYS_ROOT) and n.endswith(".png"))
-    used_by = {texture: [] for texture in textures}
-    for name in sorted(n for n in names if n.startswith("Server/") and n.endswith(".json")):
-        if name.startswith(SCAN_SKIP):
-            continue
-        text = assets.read(name).decode("utf-8", "replace")
-        if "ScreenEffects/" not in text:
-            continue
-        for texture in textures:
-            if texture in text:
-                used_by[texture].append(name)
-    return [
-        {"id": PurePosixPath(t).stem, "path": t.removesuffix(".png"), "texture": t, "usedBy": used_by[t]}
-        for t in textures
-    ]
+    return [{"id": PurePosixPath(t).stem, "path": t.removesuffix(".png"), "texture": t} for t in textures]
 
 
 def read_models(assets, names):

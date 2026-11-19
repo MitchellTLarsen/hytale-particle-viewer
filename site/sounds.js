@@ -1,6 +1,7 @@
 // Sounds tab: lists Server/Audio/SoundEvents and plays them with <audio> elements.
 
-import { button, element, formatNumber, rawJson, table } from './dom.js';
+import { button, element, formatNumber, table } from './dom.js';
+import { rawJson } from './links.js';
 
 const VOLUME_KEY = 'soundVolume';
 const decibelsToGain = (decibels) => Math.min(1, 10 ** (decibels / 20));

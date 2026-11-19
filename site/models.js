@@ -2,7 +2,8 @@
 
 import { frameAt, samplePose } from './blockyanim.js';
 import { buildModel } from './blockymodel.js';
-import { element, formatNumber, rawJson } from './dom.js';
+import { element, formatNumber } from './dom.js';
+import { rawJson } from './links.js';
 
 const GENERIC_NAMES = new Set(['Model', 'Models']);
 

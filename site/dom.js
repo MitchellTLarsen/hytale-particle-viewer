@@ -32,11 +32,3 @@ export function table(headers, rows) {
   }
   return node;
 }
-
-// Entries are [title, data] pairs.
-export function rawJson(entries) {
-  const json = element('details');
-  json.append(element('summary', 'Raw JSON'));
-  for (const [title, data] of entries) json.append(element('h3', title), element('pre', JSON.stringify(data, null, 2)));
-  return json;
-}
