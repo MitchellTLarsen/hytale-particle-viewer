@@ -1,7 +1,8 @@
 // Plain-English cards for NPC roles, interactions and trigger volumes, shown above their JSON in the Assets tab.
 // Common sensor, action and effect types get a sentence; the rest show as their type and parameters.
 
-import { chips, element } from './dom.js';
+import { button, chips, element } from './dom.js';
+import { graphView, roleFlow, ruleSource, volumeFlow } from './flow.js';
 import { valueNode } from './links.js';
 
 const META_KEYS = new Set(['Type', '$Comment', '$TODO', 'Enabled']);
@@ -55,6 +56,43 @@ function params(node, skip = new Set()) {
 }
 
 const generic = (node, skip) => [code(node.Type ?? '?'), params(node, skip)];
+
+// ---------------------------------------------------------------- Flow and List views
+
+let preferredView = 'flow';
+
+/** A Flow / List switch: the flow (from `buildFlow`, which may be async) is drawn the first time it shows. */
+function views(buildFlow, listParts) {
+  const box = element('div');
+  const switcher = element('div', undefined, 'view-switch');
+  const flowBox = element('div');
+  const listBox = element('div');
+  listBox.append(...listParts);
+  const buttons = new Map();
+  let drawn = false;
+  const show = (view) => {
+    preferredView = view;
+    flowBox.hidden = view !== 'flow';
+    listBox.hidden = view !== 'list';
+    for (const [name, control] of buttons) control.classList.toggle('active', name === view);
+    if (view !== 'flow' || drawn) return;
+    drawn = true;
+    flowBox.append(element('p', 'Drawing...', 'muted'));
+    Promise.resolve()
+      .then(buildFlow)
+      .then((graph) => flowBox.replaceChildren(graph?.nodes.length ? graphView(graph) : element('p', 'Nothing to draw here.', 'muted')))
+      .catch((error) => flowBox.replaceChildren(element('p', `Could not draw the flow (${error.message}).`, 'error')));
+  };
+  for (const [name, label] of [['flow', 'Flow'], ['list', 'List']]) {
+    buttons.set(name, button(label, () => show(name)));
+    switcher.append(buttons.get(name));
+  }
+  box.append(switcher, flowBox, listBox);
+  show(preferredView);
+  return box;
+}
+
+const text = (...parts) => phrase(...parts).textContent;
 
 // ---------------------------------------------------------------- NPC roles
 
@@ -167,7 +205,8 @@ function statesOf(role) {
   return [...states];
 }
 
-function roleCard(role) {
+// `context` ({load, assetPath}) lets a Variant's flow draw its template's rules.
+function roleCard(role, context) {
   const card = element('section', undefined, 'card');
   card.append(element('h3', 'Behaviour'));
   if (role.Type === 'Variant') {
@@ -180,10 +219,22 @@ function roleCard(role) {
   }
   const states = statesOf(role);
   if (states.length) card.append(wrap('p', 'States: ', states.map((s, i) => [i ? ', ' : '', code(s)])));
+  const describe = { sensor: (sensor) => text(sensorText(sensor)), action: (action) => text(actionText(action)) };
+  const flow = async () => {
+    const source = await ruleSource(role, context);
+    return source && roleFlow(source, describe);
+  };
   if (listOf(role.Instructions).length) {
     card.append(
-      element('p', 'Rules run from the top. The first rule whose condition holds runs and stops the list, unless it keeps checking.', 'muted'),
-      ruleList(listOf(role.Instructions)),
+      views(flow, [
+        element('p', 'Rules run from the top. The first rule whose condition holds runs and stops the list, unless it keeps checking.', 'muted'),
+        ruleList(listOf(role.Instructions)),
+      ]),
+    );
+  } else if (role.Reference && context) {
+    card.append(
+      wrap('p', 'Its rules come from the template ', show(role.Reference, 'Reference'), '. The flow fills in the values this variant sets.'),
+      views(flow, [wrap('p', 'Open the template ', show(role.Reference, 'Reference'), ' for its rules as a list.')]),
     );
   }
   return card;
@@ -249,8 +300,11 @@ const EFFECTS = {
 };
 
 const EFFECT_SKIP = new Set(['Event', 'Entry', 'Delay', 'Interval']);
+const describeCondition = (condition) => (CONDITIONS[condition.Type] ?? ((c) => generic(c, EFFECT_SKIP)))(condition);
+const describeEffect = (effect) => (EFFECTS[effect.Type] ?? ((e) => generic(e, EFFECT_SKIP)))(effect);
 
-function volumeCard(volume) {
+// `context` lets the flow look around the instance (see flow.js volumeFlow); without it there is no flow.
+function volumeCard(volume, context) {
   const card = element('section', undefined, 'card');
   card.append(element('h3', 'Rules'));
   const facts = [`Shape: ${volume.Shape?.Type ?? '?'}`, `Affects: ${(volume.TargetTypes ?? []).join(', ') || 'nothing'}`];
@@ -265,27 +319,35 @@ function volumeCard(volume) {
   };
   for (const condition of volume.Conditions ?? []) ruleFor(condition).conditions.push(condition);
   for (const effect of volume.Effects ?? []) ruleFor(effect).effects.push(effect);
+  const parts = [];
   for (const rule of rules.values()) {
-    const heading = element('h4', `On ${rule.event}${rule.entry ? `, rule ${rule.entry + 1}` : ''}`);
-    card.append(heading);
+    parts.push(element('h4', `On ${rule.event}${rule.entry ? `, rule ${rule.entry + 1}` : ''}`));
     if (rule.conditions.length) {
-      const describe = (c) => (CONDITIONS[c.Type] ?? ((x) => generic(x, EFFECT_SKIP)))(c);
-      card.append(wrap('p', 'If ', rule.conditions.map((c, i) => [i ? ' and ' : '', describe(c)])));
+      parts.push(wrap('p', 'If ', rule.conditions.map((c, i) => [i ? ' and ' : '', describeCondition(c)])));
     }
     const list = element('ul');
     for (const effect of [...rule.effects].sort((a, b) => (a.Delay ?? 0) - (b.Delay ?? 0))) {
       const when = [effect.Delay ? `after ${effect.Delay} s: ` : '', effect.Interval ? `every ${effect.Interval} s: ` : ''];
-      list.append(wrap('li', when, (EFFECTS[effect.Type] ?? ((x) => generic(x, EFFECT_SKIP)))(effect)));
+      list.append(wrap('li', when, describeEffect(effect)));
     }
-    card.append(list);
+    parts.push(list);
   }
+  const flowContext = context && {
+    ...context,
+    describeCondition: (condition) => text(describeCondition(condition)),
+    describeEffect: (effect) => text(describeEffect(effect)),
+  };
+  card.append(views(() => flowContext && volumeFlow(volume, flowContext), parts));
   return card;
 }
 
-/** The card for an asset in the Assets tab, or null when there is nothing more readable than its JSON. */
-export function behaviourCard(path, asset) {
-  if (path.includes('#')) return volumeCard(asset);
-  if (path.startsWith('Server/NPC/Roles/')) return roleCard(asset);
+/**
+ * The card for an asset in the Assets tab, or null when there is nothing more readable than its JSON.
+ * `context` is what the flows need: {load, assetPath, refsFor}, plus {instancePath, volumes} for a trigger volume.
+ */
+export function behaviourCard(path, asset, context) {
+  if (path.includes('#')) return volumeCard(asset, context);
+  if (path.startsWith('Server/NPC/Roles/')) return roleCard(asset, context);
   if (path.startsWith('Server/Item/Interactions/') || path.startsWith('Server/Item/RootInteractions/')) return interactionCard(asset);
   return null;
 }

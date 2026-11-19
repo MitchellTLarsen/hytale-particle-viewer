@@ -144,6 +144,7 @@ def read_references(assets, json_files, known):
     """Index which server and cosmetic assets mention each viewer asset, and list the assets.
 
     Returns ({"sources": [...], "refs": {"<kind>:<id>": [[source index, key], ...]}}, asset paths).
+    Kind "signal" lists who sends a trigger volume signal (SendSignal, SignalNearbyVolumes).
     A source or asset path is a file path, or "<TriggerVolumeData path>#<volume name>" for a
     volume in an instance. Model files and screen overlays match by path; ids of the other kinds
     only count under a key that names their kind, so a sound and a tag that share a word don't
@@ -176,6 +177,8 @@ def read_references(assets, json_files, known):
                     add(kind, value, source, key)
             if value in known["asset"] and names_an_asset(value, key):
                 add("asset", value, source, key)
+            if key == "SignalKeys":
+                add("signal", value, source, key)
 
     for name in json_files:
         try:

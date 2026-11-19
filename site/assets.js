@@ -21,13 +21,25 @@ function describe(path) {
   return { group, id: parts.slice(depth).join('/') };
 }
 
-/** `models` is the Models tab (for its preview); `setViewer(visible)` shows or hides the view. */
-export function createAssetsTab(data, details, models, setViewer) {
+/**
+ * `models` is the Models tab (for its preview); `setViewer(visible)` shows or hides the view; `references`
+ * is data/references.json (for trigger volume flows).
+ */
+export function createAssetsTab(data, details, models, setViewer, references) {
   // Volumes come in file order; sorting puts them, like the files, in name order.
   const items = data.assets.map((path) => ({ path, ...describe(path) })).sort((a, b) => a.path.localeCompare(b.path));
   const modelAssets = new Map(
     items.filter((item) => item.path.startsWith('Server/Models/')).map((item) => [stem(item.path), item.path]),
   );
+  const pathsByName = new Map();
+  for (const item of items) {
+    if (item.path.includes('#')) continue;
+    if (!pathsByName.has(stem(item.path))) pathsByName.set(stem(item.path), []);
+    pathsByName.get(stem(item.path)).push(item.path);
+  }
+  const assetPath = (name, folder) => (pathsByName.get(name) ?? []).find((path) => path.startsWith(folder)) ?? null;
+  const refsFor = (key) =>
+    (references.refs[key] ?? []).map(([source, field]) => ({ source: references.sources[source], field }));
   const cache = new Map();
   let request = 0;
 
@@ -92,13 +104,18 @@ export function createAssetsTab(data, details, models, setViewer) {
       return;
     }
     if (ticket !== request) return;
-    if (volume !== undefined) asset = Object.values(asset.Volumes ?? {}).find((v) => v.Name === volume) ?? {};
+    const context = { load, assetPath, refsFor };
+    if (volume !== undefined) {
+      context.instancePath = file;
+      context.volumes = Object.values(asset.Volumes ?? {});
+      asset = context.volumes.find((v) => v.Name === volume) ?? {};
+    }
 
     const facts = SUMMARY_KEYS.filter((key) => ['string', 'number'].includes(typeof asset[key])).map(
       (key) => `${key}: ${asset[key]}`,
     );
     const shownModel = element('p', undefined, 'muted');
-    const card = behaviourCard(item.path, asset);
+    const card = behaviourCard(item.path, asset, context);
     const json = element('details');
     json.open = !card;
     json.append(element('summary', 'JSON'), jsonBlock(asset));

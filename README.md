@@ -12,7 +12,10 @@ A static web page that browses Hytale's effects and models from `Assets.zip`, in
   entity effects, drops, spawns and so on), plus each trigger volume in an instance on its own.
   NPC roles, interactions and trigger volumes also get a plain-English card: a role's states and
   rules ("When state is Idle and a player is within 64 blocks in line of sight: start timer..."),
-  an interaction's steps, a volume's rules by event with their delays. NPC roles (through their
+  an interaction's steps, a volume's rules by event with their delays. Roles and volumes open in a
+  **Flow** view (a List switch shows the text): a role as a state diagram, a variant through its
+  template; a volume with what signals it and what it signals, enables, disables or spawns, and the
+  interactions those NPCs run that signal back. NPC roles (through their
   `Appearance`), model assets and items with a model show that model in the view, with its
   animations and textures.
 
@@ -66,7 +69,7 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
 - `site/render.js` draws the particles as textured quads and the picked model, with an orbit camera.
 - `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab;
   `site/models.js`, `site/blockymodel.js` and `site/blockyanim.js` are the Models tab.
-- `site/assets.js` is the Assets tab, `site/behaviour.js` its cards, `site/related.js` the Used
+- `site/assets.js` is the Assets tab, `site/behaviour.js` its cards, `site/flow.js` their Flow views, `site/related.js` the Used
   by panel and `site/links.js` the linked JSON views.
 - `site/app.js` is the tabs, the list, the particle details and the controls.
 
@@ -175,3 +178,19 @@ available, so the previews are close guesses rather than exact matches. Known ga
   `Appearance` model asset, or an item's `Model`/`Texture` or `BlockType.CustomModel`/
   `CustomModelTexture`. Template parameters (`‹Name›`) are not resolved, so such roles show none.
 
+### Flow views
+
+- A role's diagram has a box per state and an arrow per rule that sets a state, from the states
+  the rule runs in (its `State` sensors, or its parent rule's). Rules that keep the state are
+  listed in the state's box. A state written `.Sub` is read as a sub-state of the main state it
+  is used in (`Combat` + `.Sub`); this reading comes from the data, not the server code.
+- A variant draws its template's rules (following `Reference` up to six levels), with each
+  `{"Compute": "Name"}` replaced by the variant's `Modify` value or the template's parameter
+  default when that is a plain value. Shared rule components are not expanded.
+- A volume's flow goes one hop out: volumes and interactions whose signals it listens for (with
+  the NPC roles that run those interactions and the volumes that spawn them), and the volumes it
+  signals, enables or disables, the NPCs it spawns, and the interactions those NPCs run that
+  signal volumes in the instance. Signals match by name and `MatchKey` tag; distances (`Radius`)
+  are ignored, so a far volume with the same signal name shows too. More than eight targets of
+  one effect fold into a "+N more" box.
+- Labels longer than a few words are numbered on the arrow and listed under the view.

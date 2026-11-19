@@ -115,7 +115,7 @@ async function loadData() {
     createSoundsTab(sounds, elements.details),
     createScreenTab(screen, elements.details, elements.overlay),
     modelsTab,
-    createAssetsTab(assets, elements.details, modelsTab, showViewer),
+    createAssetsTab(assets, elements.details, modelsTab, showViewer, references),
   ]) {
     state.tabs[tab.name] = tab;
   }

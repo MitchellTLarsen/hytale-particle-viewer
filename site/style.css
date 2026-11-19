@@ -589,6 +589,159 @@ code {
   margin-left: 4px;
 }
 
+/* ---------------------------------------------------------------- flow views */
+
+.view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin: 4px 0 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.view-switch button {
+  border: none;
+  background: none;
+  padding: 3px 12px;
+  color: var(--muted);
+}
+
+.view-switch button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.graph {
+  overflow: auto;
+  max-height: 75vh;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: radial-gradient(circle, #232831 1px, transparent 1px) 0 0 / 18px 18px, var(--bg);
+}
+
+.graph-canvas {
+  position: relative;
+  transform-origin: 0 0;
+}
+
+.graph-sizer {
+  position: relative;
+}
+
+.graph-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.graph-zoom button {
+  padding: 1px 9px;
+}
+
+.graph-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.graph-edges .edge {
+  fill: none;
+  stroke: #56606f;
+  stroke-width: 1.5;
+}
+
+.graph-edges marker path {
+  fill: #56606f;
+}
+
+.node {
+  position: absolute;
+  padding: 8px 10px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.node.start {
+  border-color: #7fd18b;
+}
+
+.node.focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.node .kicker {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.node.start .kicker {
+  color: #7fd18b;
+}
+
+.node .title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.node ul {
+  margin: 4px 0 0;
+  padding-left: 14px;
+  color: var(--muted);
+}
+
+.node li {
+  margin: 1px 0;
+  overflow-wrap: anywhere;
+}
+
+.edge-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  max-width: 200px;
+  padding: 2px 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.edge-label.badge-number {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+  cursor: help;
+}
+
+.graph-legend {
+  margin: 10px 0 0;
+  padding-left: 26px;
+}
+
+.graph-legend li {
+  margin: 6px 0;
+}
+
+.graph-legend li div {
+  color: var(--muted);
+}
+
 /* ---------------------------------------------------------------- sound waveform */
 
 .wave {
