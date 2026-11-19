@@ -4,6 +4,7 @@ import { createAssetsTab } from './assets.js';
 import { chips, element, formatNumber } from './dom.js';
 import { configureLinks, rawJson } from './links.js';
 import { createModelsTab } from './models.js';
+import { createPins } from './pins.js';
 import { createRelatedPanel } from './related.js';
 import { Renderer } from './render.js';
 import { createScreenTab } from './screen.js';
@@ -54,6 +55,7 @@ const state = {
   tabs: {},
   tab: null,
   related: null,
+  pins: createPins(),
   selected: {},
   systems: [],
   spawnersById: new Map(),
@@ -160,6 +162,32 @@ function visibleItems() {
   );
 }
 
+function itemButton(tab, item, selected) {
+  const button = document.createElement('button');
+  const parts = item.id.split('/');
+  if (item.icon) {
+    const icon = element('img', undefined, 'icon');
+    icon.loading = 'lazy';
+    icon.alt = '';
+    icon.src = 'assets/' + item.icon;
+    button.append(icon);
+  }
+  button.append(element('span', parts.pop(), 'name'));
+  if (parts.length) button.append(element('span', parts.join('/'), 'sub'));
+  button.title = item.path;
+  button.dataset.path = item.path;
+  button.classList.toggle('selected', item === selected);
+  button.addEventListener('click', () => (location.hash = itemHash(tab, item)));
+  return button;
+}
+
+function listGroup(title, buttons, open) {
+  const group = document.createElement('details');
+  group.open = open;
+  group.append(element('summary', title), ...buttons);
+  return group;
+}
+
 function renderList() {
   const tab = state.tab;
   const items = visibleItems();
@@ -172,31 +200,18 @@ function renderList() {
     byGroup.get(name).push(item);
   }
   const fragment = document.createDocumentFragment();
+  const pinned = state.pins
+    .pinnedIn(tab.name)
+    .map((path) => tab.items.find((item) => item.path === path))
+    .filter(Boolean);
+  if (pinned.length) {
+    const pinnedGroup = listGroup(`★ Pinned (${pinned.length})`, pinned.map((item) => itemButton(tab, item, selected)), true);
+    pinnedGroup.classList.add('pinned');
+    fragment.append(pinnedGroup);
+  }
   for (const [name, groupItems] of byGroup) {
-    const group = document.createElement('details');
-    group.open = searching || (selected !== undefined && tab.group(selected) === name);
-    const summary = document.createElement('summary');
-    summary.textContent = `${name} (${groupItems.length})`;
-    group.append(summary);
-    for (const item of groupItems) {
-      const button = document.createElement('button');
-      const parts = item.id.split('/');
-      if (item.icon) {
-        const icon = element('img', undefined, 'icon');
-        icon.loading = 'lazy';
-        icon.alt = '';
-        icon.src = 'assets/' + item.icon;
-        button.append(icon);
-      }
-      button.append(element('span', parts.pop(), 'name'));
-      if (parts.length) button.append(element('span', parts.join('/'), 'sub'));
-      button.title = item.path;
-      button.dataset.path = item.path;
-      button.classList.toggle('selected', item === selected);
-      button.addEventListener('click', () => (location.hash = itemHash(tab, item)));
-      group.append(button);
-    }
-    fragment.append(group);
+    const open = searching || (selected !== undefined && tab.group(selected) === name);
+    fragment.append(listGroup(`${name} (${groupItems.length})`, groupItems.map((item) => itemButton(tab, item, selected)), open));
   }
   elements.list.replaceChildren(fragment);
   elements.count.textContent = `${items.length} of ${tab.items.length} ${tab.noun}`;
@@ -266,6 +281,10 @@ function selectFromHash() {
   if (tab !== state.tab) showTab(tab);
   state.selected[tab.name] = item;
   tab.select(item);
+  state.pins.decorate(elements.details, `${tab.name}:${item.path}`, () => {
+    renderList();
+    markSelected();
+  });
   state.related.show(tab.name, item);
   markSelected();
 }

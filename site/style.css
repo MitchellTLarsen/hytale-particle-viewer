@@ -304,6 +304,47 @@ h1 span {
   white-space: nowrap;
 }
 
+#list details.pinned summary {
+  color: #f2cc60;
+}
+
+button.pin {
+  margin-left: 12px;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 400;
+  vertical-align: middle;
+  color: var(--muted);
+}
+
+button.pin.active {
+  color: #f2cc60;
+  border-color: color-mix(in srgb, #f2cc60 50%, var(--line));
+}
+
+.notes-box {
+  margin: 0 0 10px;
+}
+
+.notes-box summary {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notes-box textarea {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  resize: vertical;
+}
+
 #list button img.icon {
   flex: none;
   align-self: center;
