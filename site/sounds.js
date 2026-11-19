@@ -16,7 +16,7 @@ function paintWave(canvas, buffer) {
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext('2d');
-  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  context.fillStyle = getComputedStyle(document.body).getPropertyValue('--accent').trim();
   const samples = buffer.getChannelData(0);
   const step = Math.max(1, Math.floor(samples.length / width));
   for (let x = 0; x < width; x++) {

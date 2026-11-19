@@ -26,7 +26,9 @@
   display: none !important;
 }
 
+/* Each tab has its own accent; --accent-soft is mixed on body so it follows the tab's accent. */
 body {
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   margin: 0;
   display: flex;
   flex-direction: column;
@@ -85,6 +87,31 @@ input[type='range'] {
   background-clip: padding-box;
 }
 
+body[data-tab='particles'],
+#tabs [data-tab='particles'] {
+  --accent: #ffa657;
+}
+
+body[data-tab='sounds'],
+#tabs [data-tab='sounds'] {
+  --accent: #7ee787;
+}
+
+body[data-tab='screen'],
+#tabs [data-tab='screen'] {
+  --accent: #f778ba;
+}
+
+body[data-tab='models'],
+#tabs [data-tab='models'] {
+  --accent: #79c0ff;
+}
+
+body[data-tab='assets'],
+#tabs [data-tab='assets'] {
+  --accent: #d2a8ff;
+}
+
 /* ---------------------------------------------------------------- top bar */
 
 #topbar {
@@ -128,10 +155,25 @@ h1 span {
   color: var(--text);
 }
 
+#tabs button::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 7px 1px 0;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
 #tabs button.active {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
   font-weight: 600;
+}
+
+#tabs button.active::before {
+  opacity: 1;
 }
 
 #app {
@@ -403,8 +445,8 @@ main {
 
 .chip {
   padding: 2px 9px;
-  background: var(--raised);
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 7%, var(--raised));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   border-radius: 999px;
   font-size: 12px;
 }
@@ -521,6 +563,36 @@ details > summary {
   font-weight: 600;
 }
 
+pre.json {
+  color: #7d8796;
+}
+
+.j-key {
+  color: #9cdcfe;
+}
+
+.j-str {
+  color: #ce9178;
+}
+
+a.j-str {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.j-num {
+  color: #b5cea8;
+}
+
+.j-bool {
+  color: #569cd6;
+}
+
+.j-null {
+  color: #c586c0;
+}
+
 pre {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -543,6 +615,20 @@ code {
   font-size: 12px;
 }
 
+code.state {
+  color: #79c0ff;
+  background: rgba(121, 192, 255, 0.12);
+}
+
+code.signal {
+  color: #e3b341;
+  background: rgba(227, 179, 65, 0.12);
+}
+
+.when {
+  color: var(--accent);
+}
+
 /* ---------------------------------------------------------------- cards */
 
 .card {
@@ -562,6 +648,42 @@ code {
   margin: 14px 0 4px;
   font-size: 13px;
   color: var(--accent);
+}
+
+.card h4.event {
+  --event: var(--muted);
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 5px;
+  color: var(--event);
+  background: color-mix(in srgb, var(--event) 14%, transparent);
+}
+
+.event-ENTER {
+  --event: #7ee787;
+}
+
+.event-EXIT {
+  --event: #ff7b72;
+}
+
+.event-SIGNAL_RECEIVED {
+  --event: #e3b341;
+}
+
+.event-TICK {
+  --event: #8b93a0;
+}
+
+.event-TAG_ADDED,
+.event-TAG_REMOVED {
+  --event: #d2a8ff;
+}
+
+.event-BLOCK_USED,
+.event-BLOCK_BROKEN,
+.event-BLOCK_PLACED {
+  --event: #f2cc60;
 }
 
 .card p {
@@ -648,44 +770,94 @@ code {
   pointer-events: none;
 }
 
+.edge-state {
+  --edge: #79c0ff;
+}
+
+.edge-signal {
+  --edge: #e3b341;
+}
+
+.edge-spawn {
+  --edge: #d2a8ff;
+}
+
+.edge-run {
+  --edge: #56d4dd;
+}
+
+.edge-enable {
+  --edge: #7ee787;
+}
+
+.edge-disable {
+  --edge: #ff7b72;
+}
+
 .graph-edges .edge {
   fill: none;
-  stroke: #56606f;
-  stroke-width: 1.5;
+  stroke: var(--edge, #56606f);
+  stroke-opacity: 0.75;
+  stroke-width: 1.6;
 }
 
 .graph-edges marker path {
-  fill: #56606f;
+  fill: var(--edge, #56606f);
 }
 
 .node {
+  --kind: #56606f;
   position: absolute;
   padding: 8px 10px;
-  background: var(--raised);
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--kind) 8%, var(--raised));
+  border: 1px solid color-mix(in srgb, var(--kind) 35%, var(--line));
+  border-left: 4px solid var(--kind);
   border-radius: 8px;
   font-size: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
+.node.kind-state {
+  --kind: #79c0ff;
+}
+
+.node.kind-volume {
+  --kind: #e3b341;
+}
+
+.node.kind-role {
+  --kind: #d2a8ff;
+}
+
+.node.kind-interaction {
+  --kind: #56d4dd;
+}
+
+.node.kind-more {
+  border-style: dashed;
+}
+
 .node.start {
-  border-color: #7fd18b;
+  --kind: #7ee787;
 }
 
 .node.focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft), 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--kind) 45%, transparent), 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 
 .node .kicker {
   font-size: 10px;
-  color: var(--muted);
+  color: var(--kind);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.node.start .kicker {
-  color: #7fd18b;
+.node a.title {
+  color: var(--text);
+}
+
+.node a.title:hover {
+  color: var(--kind);
 }
 
 .node .title {
@@ -712,10 +884,10 @@ code {
   max-width: 200px;
   padding: 2px 7px;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--edge, var(--line)) 60%, transparent);
   border-radius: 5px;
   font-size: 11px;
-  color: var(--text);
+  color: var(--edge, var(--text));
   text-align: center;
   line-height: 1.3;
 }
@@ -723,8 +895,6 @@ code {
 .edge-label.badge-number {
   min-width: 22px;
   padding: 1px 6px;
-  border-color: var(--accent);
-  color: var(--accent);
   font-weight: 700;
   cursor: help;
 }
@@ -786,6 +956,65 @@ code {
   padding: 6px 0;
 }
 
+#related summary::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--category, var(--muted));
+}
+
+#related details[data-category='NPC roles'] {
+  --category: #d2a8ff;
+}
+
+#related details[data-category='Model assets'] {
+  --category: #79c0ff;
+}
+
+#related details[data-category='Items and blocks'] {
+  --category: #f2cc60;
+}
+
+#related details[data-category='Interactions'] {
+  --category: #56d4dd;
+}
+
+#related details[data-category='Entity effects'] {
+  --category: #f778ba;
+}
+
+#related details[data-category='Trigger volumes'] {
+  --category: #e3b341;
+}
+
+#related details[data-category='Camera'] {
+  --category: #ffa657;
+}
+
+#related details[data-category='Projectiles'] {
+  --category: #ff7b72;
+}
+
+#related details[data-category='Weather'],
+#related details[data-category='Environments'] {
+  --category: #a5d6ff;
+}
+
+#related details[data-category='Audio'] {
+  --category: #7ee787;
+}
+
+#related details[data-category='Cosmetics'] {
+  --category: #ffa198;
+}
+
+#related details[data-category='NPC data'] {
+  --category: #bc8cff;
+}
+
 #related ul {
   list-style: none;
   margin: 0 0 8px;
@@ -806,8 +1035,12 @@ code {
   background: var(--raised);
 }
 
+#related li a {
+  border-left: 2px solid color-mix(in srgb, var(--category, var(--line)) 55%, transparent);
+}
+
 #related li a:hover strong {
-  color: var(--accent);
+  color: var(--category, var(--accent));
 }
 
 #related li small {

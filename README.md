@@ -19,13 +19,14 @@ A static web page that browses Hytale's effects and models from `Assets.zip`, in
   `Appearance`), model assets and items with a model show that model in the view, with its
   animations and textures.
 
-The view's playback controls float over it; model pickers (Animate, animation, texture) sit at
+Each tab has its own accent colour; nodes, arrows, volume events and Used by categories are
+colour-coded by kind. The view's playback controls float over it; model pickers (Animate, animation, texture) sit at
 its top left. Drag the bar under the view to resize it; the height is remembered.
 
 A **Used by** panel on the right lists the server assets that use the picked item (NPC roles,
 items and blocks, interactions, entity effects, trigger volumes and so on), when there are any;
-each entry opens in the Assets tab. In every JSON view, names of things the viewer can show are
-links: a role's `Appearance` opens its model asset, the asset's `Model` opens the model, an
+each entry opens in the Assets tab. Every JSON view is colour-coded, and names of things the
+viewer can show are links: a role's `Appearance` opens its model asset, the asset's `Model` opens the model, an
 interaction's `SystemId` opens the particle system, and so on.
 
 No dependencies beyond Python 3 and a browser.

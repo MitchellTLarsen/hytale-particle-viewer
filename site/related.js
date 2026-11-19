@@ -84,6 +84,7 @@ export function createRelatedPanel(index, panel) {
     for (const [title, group] of groups) {
       if (group.length === 0) continue;
       const section = element('details');
+      section.dataset.category = title;
       section.open = group.length <= OPEN_LIMIT;
       section.append(element('summary', `${title} (${group.length})`));
       const list = element('ul');

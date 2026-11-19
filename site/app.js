@@ -216,6 +216,7 @@ function moveSelection(step) {
 function showTab(tab) {
   state.tab?.leave?.();
   state.tab = tab;
+  document.body.dataset.tab = tab.name;
   for (const button of elements.tabs.querySelectorAll('button')) {
     button.classList.toggle('active', button.dataset.tab === tab.name);
   }

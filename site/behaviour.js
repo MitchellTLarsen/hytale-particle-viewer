@@ -22,7 +22,7 @@ function phrase(...parts) {
   return span;
 }
 
-const code = (text) => element('code', String(text));
+const code = (text, kind) => element('code', String(text), kind);
 
 function wrap(tag, ...parts) {
   const node = element(tag);
@@ -105,12 +105,12 @@ function sight(sensor) {
 const within = (range) => (range === undefined ? '' : [' within ', show(range), ' blocks']);
 
 const SENSORS = {
-  State: (s) => ['state is ', code(s.State)],
+  State: (s) => ['state is ', code(s.State, 'state')],
   Player: (s) => ['a player is', within(s.Range), sight(s)],
   Target: (s) => ['a target is', within(s.Range), sight(s)],
   Mob: (s) => [s.GetPlayers && s.GetNPCs ? 'a player or NPC is' : s.GetPlayers ? 'a player is' : 'an NPC is', within(s.Range), sight(s)],
   Any: (s) => [s.Once ? 'once' : 'always'],
-  Beacon: (s) => ['message ', code(s.Message), ' is heard', within(s.Range)],
+  Beacon: (s) => ['message ', code(s.Message, 'signal'), ' is heard', within(s.Range)],
   Timer: (s) => ['timer ', code(s.Name), ' is ', String(s.State ?? 'running').toLowerCase()],
   Flag: (s) => ['flag ', code(s.Name), s.Set === false ? ' is clear' : ' is set'],
   Damage: () => ['it takes damage'],
@@ -132,10 +132,10 @@ function sensorText(sensor, nested = false) {
 }
 
 const ACTIONS = {
-  State: (a) => ['go to state ', code(a.State)],
+  State: (a) => ['go to state ', code(a.State, 'state')],
   Timeout: (a) => ['wait ', show(a.Delay), ' s', a.Action ? [', then ', actionText(a.Action)] : ''],
   PlayAnimation: (a) => (a.Animation ? ['play animation ', code(a.Animation), ` (${a.Slot ?? 'slot'})`] : [`stop the ${a.Slot ?? ''} animation`]),
-  Beacon: (a) => ['send message ', code(a.Message), ' to ', show(a.TargetGroups, 'TargetGroups'), within(a.Range)],
+  Beacon: (a) => ['send message ', code(a.Message, 'signal'), ' to ', show(a.TargetGroups, 'TargetGroups'), within(a.Range)],
   TimerStart: (a) => ['start timer ', code(a.Name), ' at ', show(a.StartValueRange), ' s', a.Repeating ? ', repeating' : ''],
   SpawnInteraction: (a) => ['run interaction ', show(a.Interaction, 'Interaction')],
   PlaySound: (a) => ['play sound ', show(a.SoundEventId, 'SoundEventId')],
@@ -181,7 +181,7 @@ function ruleList(instructions) {
     if (rule.Reference) {
       item.append(phrase('Uses rules from ', show(rule.Reference, 'Reference'), params(rule.Modify ?? {})));
     } else {
-      item.append(phrase(element('strong', 'When '), sensorText(rule.Sensor)));
+      item.append(phrase(element('strong', 'When ', 'when'), sensorText(rule.Sensor)));
       const actions = element('ul');
       for (const action of listOf(rule.Actions)) actions.append(actionItem(action));
       for (const [label, key] of [['Head', 'HeadMotion'], ['Body', 'BodyMotion']]) {
@@ -218,7 +218,7 @@ function roleCard(role, context) {
     card.append(changes);
   }
   const states = statesOf(role);
-  if (states.length) card.append(wrap('p', 'States: ', states.map((s, i) => [i ? ', ' : '', code(s)])));
+  if (states.length) card.append(wrap('p', 'States: ', states.map((s, i) => [i ? ', ' : '', code(s, 'state')])));
   const describe = { sensor: (sensor) => text(sensorText(sensor)), action: (action) => text(actionText(action)) };
   const flow = async () => {
     const source = await ruleSource(role, context);
@@ -281,7 +281,7 @@ function interactionCard(asset) {
 const CONDITIONS = {
   TagCondition: (c) =>
     c.Source === 'Event'
-      ? ['signal ', code(c.TagKey), ' arrives']
+      ? ['signal ', code(c.TagKey, 'signal'), ' arrives']
       : ['tag ', code(c.TagKey), ` ${String(c.Comparison ?? 'is').toLowerCase()} `, show(c.TagValue ?? '')],
   TimeOfDay: (c) => ['the time is between ', String(c.MinHour ?? 0), ':00 and ', String(c.MaxHour ?? 24), ':00'],
 };
@@ -321,7 +321,7 @@ function volumeCard(volume, context) {
   for (const effect of volume.Effects ?? []) ruleFor(effect).effects.push(effect);
   const parts = [];
   for (const rule of rules.values()) {
-    parts.push(element('h4', `On ${rule.event}${rule.entry ? `, rule ${rule.entry + 1}` : ''}`));
+    parts.push(element('h4', `On ${rule.event}${rule.entry ? `, rule ${rule.entry + 1}` : ''}`, `event event-${rule.event}`));
     if (rule.conditions.length) {
       parts.push(wrap('p', 'If ', rule.conditions.map((c, i) => [i ? ' and ' : '', describeCondition(c)])));
     }

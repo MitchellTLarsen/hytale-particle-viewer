@@ -50,40 +50,45 @@ export function valueNode(value, key = '') {
   return link;
 }
 
-/** A <pre> of pretty-printed JSON whose linkable strings are links. */
+const escapeHtml = (text) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+/**
+ * A <pre> of pretty-printed, colour-coded JSON whose linkable strings are links. It is built as one HTML
+ * string (every value escaped) because big models would otherwise make thousands of DOM calls.
+ */
 export function jsonBlock(data) {
-  const pre = element('pre');
-  let text = '';
+  const parts = [];
   const write = (value, key, depth) => {
     const pad = '  '.repeat(depth);
-    if (Array.isArray(value) || (value && typeof value === 'object')) {
+    if (value !== null && typeof value === 'object') {
       const array = Array.isArray(value);
       const entries = array ? value.map((v) => [key, v]) : Object.entries(value);
       if (entries.length === 0) {
-        text += array ? '[]' : '{}';
+        parts.push(array ? '[]' : '{}');
         return;
       }
-      text += array ? '[\n' : '{\n';
+      parts.push(array ? '[\n' : '{\n');
       entries.forEach(([childKey, child], index) => {
-        text += pad + '  ' + (array ? '' : `${JSON.stringify(childKey)}: `);
+        parts.push(pad, '  ');
+        if (!array) parts.push(`<span class="j-key">${escapeHtml(JSON.stringify(childKey))}</span>: `);
         write(child, childKey, depth + 1);
-        text += index < entries.length - 1 ? ',\n' : '\n';
+        parts.push(index < entries.length - 1 ? ',\n' : '\n');
       });
-      text += pad + (array ? ']' : '}');
+      parts.push(pad, array ? ']' : '}');
       return;
     }
-    const target = typeof value === 'string' ? linkFor(value, key) : null;
-    if (!target) {
-      text += JSON.stringify(value);
+    if (typeof value === 'string') {
+      const text = escapeHtml(JSON.stringify(value));
+      const target = linkFor(value, key);
+      parts.push(target ? `<a class="j-str" href="${escapeHtml(hrefFor(target))}">${text}</a>` : `<span class="j-str">${text}</span>`);
       return;
     }
-    const link = element('a', JSON.stringify(value));
-    link.href = hrefFor(target);
-    pre.append(text, link);
-    text = '';
+    const kind = typeof value === 'number' ? 'j-num' : value === null ? 'j-null' : 'j-bool';
+    parts.push(`<span class="${kind}">${escapeHtml(String(JSON.stringify(value)))}</span>`);
   };
   write(data, '', 0);
-  pre.append(text);
+  const pre = element('pre', undefined, 'json');
+  pre.innerHTML = parts.join('');
   return pre;
 }
 

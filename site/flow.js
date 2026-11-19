@@ -11,8 +11,8 @@ function button(text, onClick, title) {
   return control;
 }
 
-const NODE_WIDTH = 240;
-const COLUMN_GAP = 130;
+const NODE_WIDTH = 230;
+const COLUMN_GAP = 100;
 const ARC_ROOM = 70; // space above the nodes for edges that skip a column
 const SHORT_LABEL = 28; // longer labels become a numbered badge with the text listed under the view
 const ROW_GAP = 26;
@@ -82,7 +82,7 @@ function ranks(nodes, edges, start) {
 }
 
 function nodeBox(node) {
-  const box = element('div', undefined, `node${node.accent ? ` ${node.accent}` : ''}`);
+  const box = element('div', undefined, ['node', node.kind && `kind-${node.kind}`, node.accent].filter(Boolean).join(' '));
   if (node.kicker) box.append(element('div', node.kicker, 'kicker'));
   const title = node.href ? element('a', node.title) : element('strong', node.title);
   if (node.href) title.href = node.href;
@@ -105,10 +105,20 @@ function svgElement(tag, attributes) {
 }
 
 const ZOOMS = [0.4, 0.5, 0.65, 0.8, 1, 1.25];
+const SMALLEST_START_ZOOM = 0.65; // below this the text is too small to read without zooming in
+const EDGE_KINDS = ['state', 'signal', 'spawn', 'run', 'enable', 'disable'];
+let graphCount = 0;
+
+// An edge's colour comes from what its label says it does.
+function edgeKind(labels) {
+  const first = labels[0] ?? '';
+  if (first.startsWith('signal ')) return 'signal';
+  return { spawns: 'spawn', runs: 'run', enables: 'enable', disables: 'disable' }[first] ?? 'state';
+}
 
 /**
  * A scrollable node view with zoom buttons and the list of its long edge labels; it lays itself out once it
- * is on the page. A view wider than its box starts zoomed out to fit.
+ * is on the page. A view wider than its box starts zoomed out to fit, but no smaller than 65%.
  */
 export function graphView({ nodes, edges, start }) {
   const wrapper = element('div');
@@ -119,10 +129,14 @@ export function graphView({ nodes, edges, start }) {
   const sizer = element('div', undefined, 'graph-sizer');
   const canvas = element('div', undefined, 'graph-canvas');
   const svg = svgElement('svg', { class: 'graph-edges' });
-  const marker = svgElement('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' });
-  marker.append(svgElement('path', { d: 'M0,0 L10,5 L0,10 z' }));
+  const markerId = (kind) => `arrow-${graphCount}-${kind}`;
+  graphCount++;
   const defs = svgElement('defs', {});
-  defs.append(marker);
+  for (const kind of EDGE_KINDS) {
+    const marker = svgElement('marker', { id: markerId(kind), viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' });
+    marker.append(svgElement('path', { d: 'M0,0 L10,5 L0,10 z', class: `edge-${kind}` }));
+    defs.append(marker);
+  }
   svg.append(defs);
   canvas.append(svg);
   sizer.append(canvas);
@@ -193,11 +207,12 @@ export function graphView({ nodes, edges, start }) {
         points = [[x1, y1], [x1, dip], [x2, dip], [x2, y2]];
       }
       const d = `M${points[0]} C${points[1]} ${points[2]} ${points[3]}`;
-      svg.append(svgElement('path', { d, class: 'edge', 'marker-end': 'url(#arrow)' }));
+      const kind = edgeKind(edge.labels);
+      svg.append(svgElement('path', { d, class: `edge edge-${kind}`, 'marker-end': `url(#${markerId(kind)})` }));
       if (edge.labels.length) {
         const joined = edge.labels.join('  /  ');
         const long = joined.length > SHORT_LABEL;
-        const label = element('div', long ? String(legend.childElementCount + 1) : joined, long ? 'edge-label badge-number' : 'edge-label');
+        const label = element('div', long ? String(legend.childElementCount + 1) : joined, `edge-label edge-${kind}${long ? ' badge-number' : ''}`);
         if (long) {
           const entry = element('li');
           entry.append(element('strong', `${titleOf.get(edge.from)} → ${titleOf.get(edge.to)}`));
@@ -213,7 +228,7 @@ export function graphView({ nodes, edges, start }) {
     }
     legend.hidden = legend.childElementCount === 0;
     const fit = view.clientWidth / width;
-    applyZoom(fit < 1 ? ZOOMS.filter((value) => value <= fit).pop() ?? ZOOMS[0] : 1);
+    applyZoom(fit < 1 ? Math.max(ZOOMS.filter((value) => value <= fit).pop() ?? ZOOMS[0], SMALLEST_START_ZOOM) : 1);
     zoomBar.hidden = width <= view.clientWidth;
   });
   return wrapper;
@@ -294,6 +309,7 @@ export function roleFlow(role, describe) {
   const stateNode = (name) =>
     graph.node(name, {
       title: name,
+      kind: 'state',
       kicker: name === role.StartState ? 'start state' : name === ANY_STATE ? 'rules for every state' : 'state',
       accent: name === role.StartState ? 'start' : undefined,
     });
@@ -392,6 +408,7 @@ export async function volumeFlow(volume, context) {
   const addRule = (owner, rule, accent) =>
     graph.node(ruleId(owner, rule), {
       kicker: `volume · on ${rule.event}${rule.entry ? `, rule ${rule.entry + 1}` : ''}`,
+      kind: 'volume',
       title: owner.Name,
       href: assetHref(`${instancePath}#${owner.Name}`),
       accent,
@@ -403,13 +420,14 @@ export async function volumeFlow(volume, context) {
       ],
     });
 
-  const addAsset = (path, kicker) => graph.node(`asset:${path}`, { kicker, title: stem(path), href: assetHref(path) });
+  const addAsset = (path, kicker) =>
+    graph.node(`asset:${path}`, { kicker, kind: kicker === 'NPC role' ? 'role' : 'interaction', title: stem(path), href: assetHref(path) });
 
   // Draws at most MAX_TARGETS edges to `targets` and a "+N more" box for the rest.
   const fanOut = (from, targets, label, connect) => {
     targets.slice(0, MAX_TARGETS).forEach(connect);
     if (targets.length > MAX_TARGETS) {
-      const more = graph.node(`more:${from}:${label}`, { title: `+${targets.length - MAX_TARGETS} more`, kicker: 'not shown' });
+      const more = graph.node(`more:${from}:${label}`, { title: `+${targets.length - MAX_TARGETS} more`, kicker: 'not shown', kind: 'more' });
       graph.edge(from, more, label);
     }
   };
