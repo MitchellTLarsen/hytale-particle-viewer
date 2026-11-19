@@ -1,11 +1,12 @@
 # Hytale effects viewer (proof of concept)
 
-A static web page that browses Hytale's effects from `Assets.zip`, in three tabs:
+A static web page that browses Hytale's effects and models from `Assets.zip`, in four tabs:
 
 - **Particles:** every particle system, with an approximate live preview in WebGL2.
 - **Sounds:** every sound event, playable in the browser.
 - **Screen:** camera shakes and view bobbing (applied to the preview camera) and the
   full-screen overlay images (fire, poison, spyglass and so on).
+- **Models:** every `.blockymodel` (NPCs, characters, items, blocks, cosmetics) with its texture.
 
 No dependencies beyond Python 3 and a browser.
 
@@ -27,20 +28,28 @@ keep them on your machine and check Hytale's terms before publishing them anywhe
 
 ## How it works
 
-- `build_site.py` copies the effect assets into three JSON files and copies the textures and
-  sound files they reference from `Common/`:
+- `build_site.py` copies the effect and model assets into four JSON files and copies the
+  textures, sound files and models they reference from `Common/`:
   - `particles.json`: `Server/Particles/**/*.particlesystem` and `*.particlespawner`.
   - `sounds.json`: `Server/Audio/SoundEvents/**/*.json`.
   - `screen.json`: `Server/Camera/**/*.json` (camera shakes, camera effects, view bobbing) and
     the `Common/ScreenEffects/*.png` overlays with the server assets that reference them.
+  - `models.json`: every `Common/**/*.blockymodel` with its textures. A texture comes from the
+    server or cosmetic assets that pair it with the model (`Texture`, `CustomModelTexture`,
+    `GreyscaleTexture`), most used first; failing that, from images beside the model. The model
+    files themselves are copied to `site/assets/` and loaded when picked.
 - `site/sim.js` simulates systems, spawners and particles from that JSON.
-- `site/render.js` draws the particles as textured quads with an orbit camera.
-- `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab.
+- `site/render.js` draws the particles as textured quads and the picked model, with an orbit camera.
+- `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab;
+  `site/models.js` and `site/blockymodel.js` are the Models tab.
 - `site/app.js` is the tabs, the list, the particle details and the controls.
 
 Field meanings come from the documentation strings in the server's asset codecs in the
 decompiled server: particles in `com/hypixel/hytale/server/core/asset/type/particle/config/`,
 sounds in `server/core/asset/type/soundevent/config/`, camera in `builtin/adventure/camera/asset/`.
+The `.blockymodel` layout follows how the Hytale Blockbench plugin
+(github.com/JannisX11/hytale-blockbench-plugin) reads it; node transforms also match the
+server's `server/core/asset/type/model/BlockyModelBoundsParser.java`.
 
 ## Approximations
 
@@ -86,3 +95,17 @@ available, so the previews are close guesses rather than exact matches. Known ga
   fade, pulse or tint them.
 - Weather colour filters and screen tints (`ColorFilters`, `ScreenEffectColors` in
   `Server/Weathers`) are not shown.
+
+### Models
+
+- **Scale:** models under `Blocks/` use 32 units per block, all others 64. The second figure
+  comes from the player model's height against its 1.85-block hitbox.
+- **Static:** the model stands in its default pose; `.blockyanim` animations are not played.
+- **Bare models:** attachments (hair, faces, gear from `Server/Models` `DefaultAttachments`)
+  are not added, so a base character can look incomplete; the player's head has no front face
+  because the face is an attachment.
+- **Colour:** greyscale textures are drawn grey; gradient tints (`GradientSet`) are not applied.
+- **Look:** one fixed light; `shadingMode` is only honoured for `fullbright`. Pixels under half
+  opacity are cut out, so glass-like parts are either solid or missing.
+- 326 models have no texture to be found (mostly block structures that take their block's
+  textures) and are drawn grey.

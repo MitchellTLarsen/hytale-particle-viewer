@@ -1,6 +1,7 @@
 // Page wiring: loads the data, switches tabs, lists items, shows particle details and runs the preview loop.
 
 import { element, formatNumber } from './dom.js';
+import { createModelsTab } from './models.js';
 import { Renderer } from './render.js';
 import { createScreenTab } from './screen.js';
 import { SystemInstance } from './sim.js';
@@ -80,8 +81,8 @@ async function fetchJson(path) {
 }
 
 async function loadData() {
-  const [data, sounds, screen] = await Promise.all(
-    ['particles', 'sounds', 'screen'].map((name) => fetchJson(`data/${name}.json`)),
+  const [data, sounds, screen, models] = await Promise.all(
+    ['particles', 'sounds', 'screen', 'models'].map((name) => fetchJson(`data/${name}.json`)),
   );
   state.systems = data.systems;
   state.problems = data.problems ?? [];
@@ -101,6 +102,7 @@ async function loadData() {
     particles,
     createSoundsTab(sounds, elements.details),
     createScreenTab(screen, elements.details, elements.overlay),
+    createModelsTab(models, elements.details, renderer),
   ]) {
     state.tabs[tab.name] = tab;
   }
@@ -400,10 +402,9 @@ function startLoop() {
     }
     if (!state.paused) state.tabs.screen.step(dt);
     renderer.shake = state.tabs.screen.cameraShake();
-    renderer.draw(state.instance);
-    elements.stats.textContent = state.instance
-      ? `${state.instance.particleCount} particles, ${state.instance.age.toFixed(1)} s`
-      : '';
+    const particles = state.tab === state.tabs.models ? null : state.instance;
+    renderer.draw(particles);
+    elements.stats.textContent = particles ? `${particles.particleCount} particles, ${particles.age.toFixed(1)} s` : '';
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);

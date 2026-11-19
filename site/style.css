@@ -270,6 +270,13 @@ td.missing {
   background: repeating-conic-gradient(#2a2d33 0% 25%, #3a3e46 0% 50%) 0 0 / 10px 10px;
 }
 
+img.texture {
+  max-width: 256px;
+  max-height: 256px;
+  image-rendering: pixelated;
+  background: repeating-conic-gradient(#2a2d33 0% 25%, #3a3e46 0% 50%) 0 0 / 10px 10px;
+}
+
 pre {
   background: var(--panel);
   padding: 10px;

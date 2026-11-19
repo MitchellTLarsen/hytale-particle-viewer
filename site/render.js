@@ -1,6 +1,7 @@
-// WebGL2 renderer: an orbit camera, a ground grid and camera-facing particle quads.
+// WebGL2 renderer: an orbit camera, a ground grid, camera-facing particle quads and one model.
 // Quads are built on the CPU each frame, which keeps every ParticleRotationInfluence mode simple.
 
+import { FLOATS_PER_VERTEX as MODEL_FLOATS_PER_VERTEX } from './blockymodel.js';
 import { apply3, cross, mat3FromEuler, mul3, normalize, particleLook } from './sim.js';
 
 const PARTICLE_VERTEX = `#version 300 es
@@ -51,6 +52,37 @@ uniform vec4 uColor;
 out vec4 outColor;
 void main() { outColor = uColor; }`;
 
+// Models: positions in model units scaled to blocks, UVs in texture pixels, a fixed light from above.
+const MODEL_VERTEX = `#version 300 es
+in vec3 aPosition;
+in vec2 aUv;
+in vec3 aNormal;
+in float aFullbright;
+uniform mat4 uViewProjection;
+uniform float uScale;
+out vec2 vUv;
+out float vLight;
+void main() {
+  vUv = aUv;
+  float diffuse = max(dot(aNormal, normalize(vec3(0.4, 1.0, 0.6))), 0.0);
+  vLight = mix(0.55 + 0.45 * diffuse, 1.0, aFullbright);
+  gl_Position = uViewProjection * vec4(aPosition * uScale, 1.0);
+}`;
+
+const MODEL_FRAGMENT = `#version 300 es
+precision mediump float;
+in vec2 vUv;
+in float vLight;
+uniform sampler2D uTexture;
+uniform vec2 uTextureSize;
+uniform bool uTextured;
+out vec4 outColor;
+void main() {
+  vec4 texel = uTextured ? texture(uTexture, vUv / uTextureSize) : vec4(0.7, 0.7, 0.7, 1.0);
+  if (texel.a < 0.5) discard;
+  outColor = vec4(texel.rgb * vLight, 1.0);
+}`;
+
 const RENDER_MODES = { BlendLinear: 0, BlendAdd: 1, Erosion: 2, Distortion: 3 };
 const FLOATS_PER_VERTEX = 9; // position 3, uv 2, colour 4
 const VERTICES_PER_PARTICLE = 6;
@@ -75,6 +107,12 @@ export class Renderer {
     this.particleVao = this.createParticleVao();
     this.gridVertexCount = 0;
     this.gridVao = this.createGridVao();
+    // Set by the Models tab: {mesh, texture, scale}, mesh as built by blockymodel.js.
+    this.model = null;
+    this.modelProgram = createProgram(gl, MODEL_VERTEX, MODEL_FRAGMENT);
+    this.modelBuffer = gl.createBuffer();
+    this.modelVao = this.createModelVao();
+    this.uploadedMesh = null;
   }
 
   // Loads `assets/<path>` once; returns the entry, which has `ready` once the image arrives.
@@ -105,11 +143,12 @@ export class Renderer {
     const gl = this.gl;
     this.resize();
     gl.clearColor(...this.background, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     const { viewProjection, eye, right, up } = this.cameraMatrices();
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     if (this.showGrid) this.drawGrid(viewProjection);
+    if (this.model) this.drawModel(viewProjection);
     if (!system) return;
 
     gl.useProgram(this.particleProgram.program);
@@ -183,6 +222,37 @@ export class Renderer {
     gl.drawArrays(gl.TRIANGLES, 0, offset / FLOATS_PER_VERTEX);
   }
 
+  drawModel(viewProjection) {
+    const gl = this.gl;
+    const { mesh, texture, scale } = this.model;
+    const image = texture ? this.texture(texture) : null;
+    if (image && !image.ready && !image.failed) return;
+    if (this.uploadedMesh !== mesh) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.modelBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+      this.uploadedMesh = mesh;
+    }
+    const uniforms = this.modelProgram.uniforms;
+    gl.useProgram(this.modelProgram.program);
+    gl.uniformMatrix4fv(uniforms.uViewProjection, false, viewProjection);
+    gl.uniform1f(uniforms.uScale, scale);
+    gl.uniform1i(uniforms.uTextured, image?.ready ? 1 : 0);
+    if (image?.ready) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, image.handle);
+      gl.bindSampler(0, this.samplers.nearest);
+      gl.uniform1i(uniforms.uTexture, 0);
+      gl.uniform2f(uniforms.uTextureSize, image.width, image.height);
+    }
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+    gl.bindVertexArray(this.modelVao);
+    gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+    gl.bindVertexArray(null);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+  }
+
   drawGrid(viewProjection) {
     const gl = this.gl;
     gl.useProgram(this.lineProgram.program);
@@ -235,6 +305,21 @@ export class Renderer {
     gl.vertexAttribPointer(attributes.aUv, 2, gl.FLOAT, false, stride, 12);
     gl.enableVertexAttribArray(attributes.aColor);
     gl.vertexAttribPointer(attributes.aColor, 4, gl.FLOAT, false, stride, 20);
+    gl.bindVertexArray(null);
+    return vao;
+  }
+
+  createModelVao() {
+    const gl = this.gl;
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.modelBuffer);
+    const stride = MODEL_FLOATS_PER_VERTEX * 4;
+    const attributes = this.modelProgram.attributes;
+    for (const [name, size, offset] of [['aPosition', 3, 0], ['aUv', 2, 12], ['aNormal', 3, 20], ['aFullbright', 1, 32]]) {
+      gl.enableVertexAttribArray(attributes[name]);
+      gl.vertexAttribPointer(attributes[name], size, gl.FLOAT, false, stride, offset);
+    }
     gl.bindVertexArray(null);
     return vao;
   }

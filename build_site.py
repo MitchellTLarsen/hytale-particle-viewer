@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Build the effects viewer data from a Hytale Assets.zip.
 
-Writes three files to site/data/:
+Writes four files to site/data/:
 - particles.json: every .particlesystem and .particlespawner under Server/Particles/.
 - sounds.json: every sound event under Server/Audio/SoundEvents/.
 - screen.json: camera shakes, camera effects and view bobbing under Server/Camera/, plus the
   screen overlay images in Common/ScreenEffects/ and the server assets that use them.
-It also copies the textures and sound files those reference into site/assets/. The output
-contains Hypixel's assets, so it stays on this machine (see .gitignore).
+- models.json: every .blockymodel in Common/ with the textures it is drawn with.
+It also copies the textures, sound files and models those reference into site/assets/. The
+output contains Hypixel's assets, so it stays on this machine (see .gitignore).
 """
 import argparse
+import collections
 import json
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -24,7 +26,10 @@ OVERLAYS_ROOT = "Common/ScreenEffects/"
 COMMON_ROOT = "Common/"
 SYSTEM_SUFFIX = ".particlesystem"
 SPAWNER_SUFFIX = ".particlespawner"
-# Large folders that never reference screen overlays; skipping them keeps the scan fast.
+MODEL_SUFFIX = ".blockymodel"
+# Keys that sit beside a model path and name its texture (items and models, blocks, cosmetics).
+TEXTURE_KEYS = ("Texture", "CustomModelTexture", "GreyscaleTexture")
+# Large folders that never reference overlays or models; skipping them keeps the scans fast.
 SCAN_SKIP = ("Server/Prefabs/", "Server/World/", "Server/HytaleGenerator/")
 
 
@@ -54,15 +59,21 @@ def main():
         overlays = read_overlays(assets, names)
         copied += copy_files(assets, names, {o["texture"] for o in overlays}, assets_dir, problems)
 
+        models = read_models(assets, names)
+        model_files = {m["path"] + MODEL_SUFFIX for m in models} | {t for m in models for t in m["textures"]}
+        copied += copy_files(assets, names, model_files, assets_dir, problems)
+
     data_dir = args.out / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     write_json(data_dir / "particles.json", {"systems": systems, "spawners": spawners, "problems": problems})
     write_json(data_dir / "sounds.json", {"sounds": sounds})
     write_json(data_dir / "screen.json", {"camera": camera, "overlays": overlays})
+    write_json(data_dir / "models.json", {"models": models})
 
     print(
         f"{len(systems)} systems, {len(spawners)} spawners, {len(sounds)} sound events, "
-        f"{len(camera)} camera assets, {len(overlays)} overlays, {copied} files -> {args.out}"
+        f"{len(camera)} camera assets, {len(overlays)} overlays, {len(models)} models, "
+        f"{copied} files -> {args.out}"
     )
     for problem in problems:
         print("WARNING:", problem)
@@ -112,6 +123,67 @@ def read_overlays(assets, names):
         {"id": PurePosixPath(t).stem, "path": t.removesuffix(".png"), "texture": t, "usedBy": used_by[t]}
         for t in textures
     ]
+
+
+def read_models(assets, names):
+    """Return [{path, textures}] for every .blockymodel; path is relative to Common/ without the suffix.
+
+    Textures come from the server and cosmetic assets that pair the model with one, most used
+    first; failing that, from the image files beside the model.
+    """
+    pairs = collections.defaultdict(collections.Counter)
+    for name in sorted(n for n in names if n.startswith(("Server/", "Cosmetics/")) and n.endswith(".json")):
+        if name.startswith(SCAN_SKIP):
+            continue
+        try:
+            collect_model_textures(json.loads(assets.read(name)), pairs)
+        except (ValueError, UnicodeDecodeError):
+            continue
+    images = collections.defaultdict(list)
+    for name in sorted(n for n in names if n.startswith(COMMON_ROOT) and n.endswith(".png")):
+        image = PurePosixPath(name[len(COMMON_ROOT) :])
+        images[str(image.parent)].append(image)
+    known = {str(i) for folder in images.values() for i in folder}
+    models = []
+    for name in sorted(n for n in names if n.startswith(COMMON_ROOT) and n.endswith(MODEL_SUFFIX)):
+        file = name[len(COMMON_ROOT) :]
+        textures = [t for t, _ in pairs[file].most_common() if t in known] or textures_beside(file, images)
+        models.append({"path": file.removesuffix(MODEL_SUFFIX), "textures": textures})
+    return models
+
+
+def collect_model_textures(value, pairs):
+    if isinstance(value, dict):
+        textures = textures_named_in(value)
+        for item in value.values():
+            if isinstance(item, str) and item.endswith(MODEL_SUFFIX):
+                pairs[item].update(textures)
+            collect_model_textures(item, pairs)
+    elif isinstance(value, list):
+        for item in value:
+            collect_model_textures(item, pairs)
+
+
+def textures_named_in(entry):
+    for key in TEXTURE_KEYS:
+        value = entry.get(key)
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [v["Texture"] for v in value if isinstance(v, dict) and isinstance(v.get("Texture"), str)]
+    return []
+
+
+def textures_beside(file, images):
+    """Images named after the model or Texture.png, else a <model>_Textures folder, else the folder's only image.
+
+    images maps each folder to the images in it.
+    """
+    folder, stem = str(PurePosixPath(file).parent), PurePosixPath(file).stem
+    in_folder = images.get(folder, [])
+    named = [i for i in in_folder if i.name.startswith(stem) or i.name == "Texture.png"]
+    found = named or images.get(f"{folder}/{stem}_Textures", []) or (in_folder if len(in_folder) == 1 else [])
+    return [str(i) for i in found]
 
 
 def copy_files(assets, names, files, out_dir, problems):
