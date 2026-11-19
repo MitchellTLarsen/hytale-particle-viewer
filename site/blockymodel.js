@@ -110,30 +110,47 @@ function addShape(out, shape, center, rotation, bounds, stretchFactors = [1, 1, 
 }
 
 /**
- * Returns {vertices, count, nodes, min, max}; min and max bound the drawn shapes in model units. `pose` maps node
- * names to animation deltas (see blockyanim.js samplePose); without it the model is in its rest pose.
+ * Returns {vertices, count, nodes, min, max, bones}; min and max bound the drawn shapes in model units, and
+ * bones maps each node name to its world {center, rotation}. `pose` maps node names to animation deltas
+ * (see blockyanim.js samplePose); without it the model is in its rest pose.
+ *
+ * With `attachTo` (another model's bones) the model is an attachment: a root node named like a bone takes
+ * that bone's place and turn, ignoring its own position, orientation and offset, as the Hytale Blockbench
+ * plugin attaches pieces. Other roots stay where they are.
  */
-export function buildModel(model, pose) {
+export function buildModel(model, pose, attachTo) {
   const out = [];
   const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+  const bones = new Map();
   let nodes = 0;
-  const visit = (node, parentCenter, parentRotation) => {
+  const visit = (node, parentCenter, parentRotation, bone) => {
     nodes++;
     const shape = node.shape ?? {};
     const animated = pose?.get(node.name) ?? {};
-    const o = node.orientation ?? {};
-    let local = normalize([o.x ?? 0, o.y ?? 0, o.z ?? 0, o.w ?? 1]);
-    if (animated.orientation) local = multiplyQuaternions(local, animated.orientation);
-    const rotation = multiplyQuaternions(parentRotation, local);
-    const position = add(vector(node.position), animated.position ?? [0, 0, 0]);
-    const pivot = add(parentCenter, rotate(parentRotation, position));
-    const center = add(pivot, rotate(rotation, vector(shape.offset)));
+    let rotation;
+    let center;
+    let shapeCenter;
+    if (bone) {
+      rotation = bone.rotation;
+      center = bone.center;
+      shapeCenter = add(center, rotate(rotation, vector(shape.offset)));
+    } else {
+      const o = node.orientation ?? {};
+      let local = normalize([o.x ?? 0, o.y ?? 0, o.z ?? 0, o.w ?? 1]);
+      if (animated.orientation) local = multiplyQuaternions(local, animated.orientation);
+      rotation = multiplyQuaternions(parentRotation, local);
+      const position = add(vector(node.position), animated.position ?? [0, 0, 0]);
+      const pivot = add(parentCenter, rotate(parentRotation, position));
+      center = add(pivot, rotate(rotation, vector(shape.offset)));
+      shapeCenter = center;
+    }
+    if (!bones.has(node.name)) bones.set(node.name, { center, rotation });
     if ((shape.type === 'box' || shape.type === 'quad') && (animated.visible ?? shape.visible !== false)) {
-      addShape(out, shape, center, rotation, bounds, animated.stretch);
+      addShape(out, shape, shapeCenter, rotation, bounds, animated.stretch);
     }
     for (const child of node.children ?? []) visit(child, center, rotation);
   };
-  for (const node of model.nodes ?? []) visit(node, [0, 0, 0], [0, 0, 0, 1]);
+  for (const node of model.nodes ?? []) visit(node, [0, 0, 0], [0, 0, 0, 1], attachTo?.get(node.name));
   if (out.length === 0) bounds.min = bounds.max = [0, 0, 0];
-  return { vertices: new Float32Array(out), count: out.length / FLOATS_PER_VERTEX, nodes, ...bounds };
+  return { vertices: new Float32Array(out), count: out.length / FLOATS_PER_VERTEX, nodes, ...bounds, bones };
 }

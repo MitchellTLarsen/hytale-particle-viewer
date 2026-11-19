@@ -29,12 +29,19 @@ async function loadJson(url) {
   return response.json();
 }
 
-export function createModelsTab(data, details, renderer, controls) {
+/**
+ * `controls` is the view's top-left toolbar; `makeSystem(id)` makes a particle system instance (or null),
+ * for particles a model asset attaches to the model.
+ */
+export function createModelsTab(data, details, renderer, controls, makeSystem) {
   const items = data.models.map((model) => ({ ...model, ...describe(model.path) }));
   const byPath = new Map(items.map((item) => [item.path, item]));
   const animationCache = new Map();
   let request = 0;
-  let current = null; // {model, mesh} of the shown model, mesh in its rest pose
+  // The shown model: {model, mesh (rest pose), scale, attachments [{model, rest}]}; renderer.models holds the
+  // base part first, then one part per attachment.
+  let current = null;
+  let attached = []; // particle systems on the model: {spec, system}
   let playing = null; // {animation, speed, seconds}
   let onTexture = null; // keeps a texture picture in the details in step with the picker
   let animate = false;
@@ -42,23 +49,59 @@ export function createModelsTab(data, details, renderer, controls) {
 
   function clearPreview() {
     request++;
-    renderer.model = null;
+    renderer.setModels([]);
     current = null;
+    attached = [];
     playing = null;
     onTexture = null;
     controls.hidden = true;
     controls.replaceChildren();
   }
 
+  // Puts each attached system at its node (PositionOffset read as blocks), so it follows animated bones.
+  function placeSystems(bones) {
+    for (const { spec, system } of attached) {
+      const node = bones.get(spec.TargetNodeName);
+      const offset = [spec.PositionOffset?.X ?? 0, spec.PositionOffset?.Y ?? 0, spec.PositionOffset?.Z ?? 0];
+      const at = [0, 1, 2].map((i) => (node ? node.center[i] * current.scale : 0) + offset[i]);
+      for (const group of system.groups) {
+        group.restOrigin ??= [...group.origin];
+        group.origin = group.restOrigin.map((v, i) => v + at[i]);
+      }
+    }
+  }
+
+  // Sets every part's mesh: the rest pose, or the animation's pose with attachments on the posed bones.
+  function pose(posed) {
+    const parts = renderer.models;
+    if (!current || parts.length === 0) return;
+    const base = posed ? buildModel(current.model, posed) : current.mesh;
+    parts[0].mesh = base;
+    current.attachments.forEach((attachment, index) => {
+      parts[index + 1].mesh = posed ? buildModel(attachment.model, posed, base.bones) : attachment.rest;
+    });
+    placeSystems(base.bones);
+  }
+
   function step(dt) {
-    if (!playing || !current || !renderer.model) return;
-    playing.seconds += dt;
-    const frame = frameAt(playing.animation, playing.seconds, playing.speed);
-    renderer.model.mesh = buildModel(current.model, samplePose(playing.animation, frame));
+    if (!current) return;
+    if (playing) {
+      playing.seconds += dt;
+      pose(samplePose(playing.animation, frameAt(playing.animation, playing.seconds, playing.speed)));
+    }
+    for (const entry of attached) {
+      entry.system.step(dt);
+      if (entry.system.finished) {
+        entry.system = makeSystem(entry.spec.SystemId);
+        placeSystems(renderer.models[0].mesh.bones);
+      }
+    }
   }
 
   function restart() {
     if (playing) playing.seconds = 0;
+    for (const entry of attached) entry.system = makeSystem(entry.spec.SystemId);
+    if (current) placeSystems(renderer.models[0].mesh.bones);
   }
 
   function loadAnimation(file) {
@@ -72,16 +115,22 @@ export function createModelsTab(data, details, renderer, controls) {
 
   /**
    * Shows the model at `path` (under Common/, without .blockymodel) in the view, `texture` first among its
-   * textures. Resolves to {model, mesh, scale, textures}, to {error} when the model can't load, or to null
-   * when another preview has started meanwhile.
+   * textures. `look` adds a model asset's attachments ([{Model, Texture}]) and particles ([{SystemId,
+   * TargetNodeName, PositionOffset}]). Resolves to {model, mesh, scale, textures}, to {error} when the model
+   * can't load, or to null when another preview has started meanwhile.
    */
-  async function preview(path, texture) {
+  async function preview(path, texture, look = {}) {
     clearPreview();
+    look = { ...look, attachments: (look.attachments ?? []).filter((attachment) => typeof attachment?.Model === 'string') };
     const ticket = request;
     const item = byPath.get(path);
     let model;
+    let attachmentModels;
     try {
-      model = await loadJson(`assets/${path}.blockymodel`);
+      [model, ...attachmentModels] = await Promise.all([
+        loadJson(`assets/${path}.blockymodel`),
+        ...(look.attachments ?? []).map((attachment) => loadJson(`assets/${attachment.Model}`).catch(() => null)),
+      ]);
     } catch (error) {
       return ticket === request ? { error } : null;
     }
@@ -89,11 +138,22 @@ export function createModelsTab(data, details, renderer, controls) {
     const mesh = buildModel(model);
     const scale = 1 / unitsPerBlock(path);
     const textures = [...new Set([texture, ...(item?.textures ?? [])].filter(Boolean))];
-    current = { model, mesh };
-    renderer.model = { mesh, texture: textures[0] ?? null, scale };
+    const attachments = (look.attachments ?? [])
+      .map((attachment, index) => ({ ...attachment, model: attachmentModels[index] }))
+      .filter((attachment) => attachment.model)
+      .map((attachment) => ({ model: attachment.model, texture: attachment.Texture ?? null, rest: buildModel(attachment.model, null, mesh.bones) }));
+    current = { model, mesh, scale, attachments };
+    renderer.setModels([
+      { mesh, texture: textures[0] ?? null, scale },
+      ...attachments.map((attachment) => ({ mesh: attachment.rest, texture: attachment.texture, scale })),
+    ]);
+    attached = (look.particles ?? [])
+      .map((spec) => ({ spec, system: makeSystem(spec.SystemId) }))
+      .filter((entry) => entry.system);
+    placeSystems(mesh.bones);
     frameCamera(renderer.camera, mesh, scale);
     fillControls(item?.animations ?? [], textures, ticket);
-    return { model, mesh, scale, textures };
+    return { model, mesh, scale, textures, attachments: attachments.length, particles: attached.length };
   }
 
   function fillControls(animations, textures, ticket) {
@@ -104,7 +164,7 @@ export function createModelsTab(data, details, renderer, controls) {
       choice.title = 'Texture';
       for (const texture of textures) choice.append(new Option(fileName(texture), texture));
       choice.addEventListener('change', () => {
-        renderer.model.texture = choice.value;
+        renderer.models[0].texture = choice.value;
         onTexture?.(choice.value);
       });
       parts.push(choice);
@@ -131,7 +191,7 @@ export function createModelsTab(data, details, renderer, controls) {
     const update = async () => {
       playing = null;
       status.textContent = '';
-      if (renderer.model) renderer.model.mesh = current.mesh;
+      pose(null);
       if (!toggle.checked) return;
       const entry = animations.find((animation) => animation.name === choice.value);
       try {
@@ -203,6 +263,7 @@ export function createModelsTab(data, details, renderer, controls) {
     restart,
     preview,
     clearPreview,
+    systems: () => attached.map((entry) => entry.system),
     texturePicture,
   };
 }

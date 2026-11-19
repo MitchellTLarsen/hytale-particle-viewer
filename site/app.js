@@ -87,6 +87,15 @@ function resolveSpawner(id, systemPath) {
   );
 }
 
+// A fresh instance of the particle system with this id (a non-test one when ids repeat), or null.
+function makeSystem(id) {
+  state.systemsById ??= new Map(
+    [...state.systems].sort((a, b) => isHiddenFolder(b.path) - isHiddenFolder(a.path)).map((system) => [system.id, system]),
+  );
+  const system = state.systemsById.get(id);
+  return system ? new SystemInstance(system.data, (spawnerId) => resolveSpawner(spawnerId, system.path)?.data) : null;
+}
+
 async function fetchJson(path) {
   const response = await fetch(path);
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
@@ -112,7 +121,7 @@ async function loadData() {
     group: (system) => topFolder(system.path),
     select: selectSystem,
   };
-  const modelsTab = createModelsTab(models, elements.details, renderer, elements.modelControls);
+  const modelsTab = createModelsTab(models, elements.details, renderer, elements.modelControls, makeSystem);
   for (const tab of [
     particles,
     createSoundsTab(sounds, elements.details),
@@ -498,7 +507,7 @@ function startLoop() {
     if (!state.paused) for (const tab of Object.values(state.tabs)) tab.step?.(dt);
     renderer.shake = state.tabs.screen.cameraShake();
     const particles = PARTICLE_TABS.has(state.tab.name) ? state.instance : null;
-    renderer.draw(particles);
+    renderer.draw([...(particles ? [particles] : []), ...state.tabs.models.systems()]);
     elements.stats.textContent = particles ? `${particles.particleCount} particles, ${particles.age.toFixed(1)} s` : '';
     requestAnimationFrame(frame);
   };

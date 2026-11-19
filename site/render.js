@@ -84,6 +84,7 @@ void main() {
 }`;
 
 const RENDER_MODES = { BlendLinear: 0, BlendAdd: 1, Erosion: 2, Distortion: 3 };
+const MODEL_ATTRIBUTES = [['aPosition', 3, 0], ['aUv', 2, 12], ['aNormal', 3, 20], ['aFullbright', 1, 32]];
 const FLOATS_PER_VERTEX = 9; // position 3, uv 2, colour 4
 const VERTICES_PER_PARTICLE = 6;
 const GRID_HALF_SIZE = 8;
@@ -107,12 +108,16 @@ export class Renderer {
     this.particleVao = this.createParticleVao();
     this.gridVertexCount = 0;
     this.gridVao = this.createGridVao();
-    // Set by the Models tab: {mesh, texture, scale}, mesh as built by blockymodel.js.
-    this.model = null;
+    // Model parts to draw, set with setModels: [{mesh, texture, scale}], mesh as built by blockymodel.js. A part
+    // whose mesh is replaced (animation) is uploaded again on the next draw.
+    this.models = [];
     this.modelProgram = createProgram(gl, MODEL_VERTEX, MODEL_FRAGMENT);
-    this.modelBuffer = gl.createBuffer();
     this.modelVao = this.createModelVao();
-    this.uploadedMesh = null;
+  }
+
+  setModels(parts) {
+    for (const part of this.models) if (part.buffer && !parts.includes(part)) this.gl.deleteBuffer(part.buffer);
+    this.models = parts;
   }
 
   // Loads `assets/<path>` once; returns the entry, which has `ready` once the image arrives.
@@ -139,7 +144,8 @@ export class Renderer {
     return entry;
   }
 
-  draw(system) {
+  /** Draws the grid, the model parts and `systems` (particle system instances). */
+  draw(systems = []) {
     const gl = this.gl;
     this.resize();
     gl.clearColor(...this.background, 1);
@@ -148,14 +154,14 @@ export class Renderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     if (this.showGrid) this.drawGrid(viewProjection);
-    if (this.model) this.drawModel(viewProjection);
-    if (!system) return;
+    for (const part of this.models) this.drawModel(part, viewProjection);
+    if (systems.length === 0) return;
 
     gl.useProgram(this.particleProgram.program);
     gl.uniformMatrix4fv(this.particleProgram.uniforms.uViewProjection, false, viewProjection);
     gl.uniform1i(this.particleProgram.uniforms.uTexture, 0);
     gl.bindVertexArray(this.particleVao);
-    for (const group of system.groups) {
+    for (const group of systems.flatMap((system) => system.groups)) {
       if (group.hidden || !group.compiled?.texture) continue;
       const texture = this.texture(group.compiled.texture);
       if (!texture.ready) continue;
@@ -222,15 +228,16 @@ export class Renderer {
     gl.drawArrays(gl.TRIANGLES, 0, offset / FLOATS_PER_VERTEX);
   }
 
-  drawModel(viewProjection) {
+  drawModel(part, viewProjection) {
     const gl = this.gl;
-    const { mesh, texture, scale } = this.model;
+    const { mesh, texture, scale } = part;
     const image = texture ? this.texture(texture) : null;
     if (image && !image.ready && !image.failed) return;
-    if (this.uploadedMesh !== mesh) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.modelBuffer);
+    part.buffer ??= gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, part.buffer);
+    if (part.uploaded !== mesh) {
       gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
-      this.uploadedMesh = mesh;
+      part.uploaded = mesh;
     }
     const uniforms = this.modelProgram.uniforms;
     gl.useProgram(this.modelProgram.program);
@@ -247,6 +254,7 @@ export class Renderer {
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
     gl.bindVertexArray(this.modelVao);
+    this.pointModelAttributes();
     gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
     gl.bindVertexArray(null);
     gl.disable(gl.DEPTH_TEST);
@@ -313,15 +321,18 @@ export class Renderer {
     const gl = this.gl;
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.modelBuffer);
-    const stride = MODEL_FLOATS_PER_VERTEX * 4;
-    const attributes = this.modelProgram.attributes;
-    for (const [name, size, offset] of [['aPosition', 3, 0], ['aUv', 2, 12], ['aNormal', 3, 20], ['aFullbright', 1, 32]]) {
-      gl.enableVertexAttribArray(attributes[name]);
-      gl.vertexAttribPointer(attributes[name], size, gl.FLOAT, false, stride, offset);
-    }
+    for (const name of MODEL_ATTRIBUTES.map(([attribute]) => attribute)) gl.enableVertexAttribArray(this.modelProgram.attributes[name]);
     gl.bindVertexArray(null);
     return vao;
+  }
+
+  // Each part has its own buffer, so the attribute layout is pointed at the bound buffer before drawing.
+  pointModelAttributes() {
+    const gl = this.gl;
+    const stride = MODEL_FLOATS_PER_VERTEX * 4;
+    for (const [name, size, offset] of MODEL_ATTRIBUTES) {
+      gl.vertexAttribPointer(this.modelProgram.attributes[name], size, gl.FLOAT, false, stride, offset);
+    }
   }
 
   createGridVao() {

@@ -68,12 +68,16 @@ export function createAssetsTab(data, details, models, setViewer, references) {
     return cache.get(file);
   }
 
-  // A model asset's Model, and the Texture set on it or on a child of the asset that sets the Model.
+  // A model asset's Model, the Texture set on it or on a child of the asset that sets the Model, and its
+  // DefaultAttachments and Particles (the nearest asset in the Parent chain that sets each).
   async function modelAssetModel(asset) {
     let texture;
+    const look = {};
     for (let current = asset, depth = 0; current && depth < 10; depth++) {
       texture ??= typeof current.Texture === 'string' ? current.Texture : undefined;
-      if (typeof current.Model === 'string') return { model: current.Model, texture };
+      if (Array.isArray(current.DefaultAttachments)) look.attachments ??= current.DefaultAttachments;
+      if (Array.isArray(current.Particles)) look.particles ??= current.Particles;
+      if (typeof current.Model === 'string') return { model: current.Model, texture, look };
       const parent = modelAssets.get(current.Parent);
       current = parent ? await load(parent) : null;
     }
@@ -144,13 +148,14 @@ export function createAssetsTab(data, details, models, setViewer, references) {
     const found = await modelOf(item.path, asset).catch(() => null);
     if (ticket !== request || !found) return;
     setViewer(true);
-    const shown = await models.preview(found.model.replace(/\.blockymodel$/, ''), found.texture);
+    const shown = await models.preview(found.model.replace(/\.blockymodel$/, ''), found.texture, found.look);
     if (ticket !== request) return;
     if (!shown || shown.error) {
       setViewer(false);
       return;
     }
-    shownModel.append('In the view: ', valueNode(found.model, 'Model'));
+    const extras = [shown.attachments && `${shown.attachments} attachments`, shown.particles && `${shown.particles} particle systems`].filter(Boolean);
+    shownModel.append('In the view: ', valueNode(found.model, 'Model'), extras.length ? `, with ${extras.join(' and ')}` : '');
   }
 
   return {
