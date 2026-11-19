@@ -69,6 +69,7 @@ export class Renderer {
     this.camera = { yaw: 35, pitch: 20, distance: 7, target: [0, 0.75, 0] };
     this.background = [0.106, 0.114, 0.133];
     this.showGrid = true;
+    this.shake = null;
     this.vertexData = new Float32Array(FLOATS_PER_VERTEX * VERTICES_PER_PARTICLE * 1024);
     this.particleBuffer = gl.createBuffer();
     this.particleVao = this.createParticleVao();
@@ -200,7 +201,8 @@ export class Renderer {
       target[1] + distance * Math.sin((pitch * Math.PI) / 180),
       target[2] + distance * cp * Math.cos((yaw * Math.PI) / 180),
     ];
-    const view = lookAt(eye, target, [0, 1, 0]);
+    let view = lookAt(eye, target, [0, 1, 0]);
+    if (this.shake) view = multiply4(shakeMatrix(this.shake), view);
     const aspect = this.canvas.width / Math.max(this.canvas.height, 1);
     const projection = perspective(50, aspect, 0.05, 500);
     // Column-major view matrix: rows of its rotation part are the camera axes.
@@ -366,6 +368,25 @@ function lookAt(eye, target, worldUp) {
   const y = cross(z, x);
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1]);
+}
+
+const identity = () => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+// Axis 0, 1, 2 = x, y, z.
+function rotation(axis, radians) {
+  const out = identity();
+  const [a, b] = [[1, 2], [2, 0], [0, 1]][axis];
+  out[a * 5] = out[b * 5] = Math.cos(radians);
+  out[a * 4 + b] = Math.sin(radians);
+  out[b * 4 + a] = -Math.sin(radians);
+  return out;
+}
+
+// The shake moves the camera in its own space, so the view matrix gets the inverse move first.
+function shakeMatrix({ offset, pitch, yaw, roll }) {
+  const move = identity();
+  move.set([-offset[0], -offset[1], -offset[2]], 12);
+  return [rotation(1, -yaw), rotation(0, -pitch), rotation(2, -roll)].reduce((m, r) => multiply4(r, m), move);
 }
 
 function multiply4(a, b) {

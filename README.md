@@ -1,7 +1,13 @@
-# Hytale particle viewer (proof of concept)
+# Hytale effects viewer (proof of concept)
 
-A static web page that lists every particle system in Hytale's `Assets.zip` and plays an
-approximate live preview of each one in WebGL2. No dependencies beyond Python 3 and a browser.
+A static web page that browses Hytale's effects from `Assets.zip`, in three tabs:
+
+- **Particles:** every particle system, with an approximate live preview in WebGL2.
+- **Sounds:** every sound event, playable in the browser.
+- **Screen:** camera shakes and view bobbing (applied to the preview camera) and the
+  full-screen overlay images (fire, poison, spyglass and so on).
+
+No dependencies beyond Python 3 and a browser.
 
 ## Use
 
@@ -13,26 +19,35 @@ open http://localhost:8000
 
 `build_site.py --assets <path>` points at a different `Assets.zip`; the default is the launcher
 install at `~/Library/Application Support/Hytale/install/release/package/game/latest/Assets.zip`.
-Re-run it after a game update.
+`--no-sounds` skips copying the sound files (about 210 MB); the Sounds tab still lists the
+events but cannot play them. Re-run it after a game update.
 
 The generated `site/data/` and `site/assets/` contain Hypixel's assets. They are git-ignored;
 keep them on your machine and check Hytale's terms before publishing them anywhere.
 
 ## How it works
 
-- `build_site.py` copies every `Server/Particles/**/*.particlesystem` and `*.particlespawner`
-  into one JSON file and copies the textures they reference from `Common/`.
+- `build_site.py` copies the effect assets into three JSON files and copies the textures and
+  sound files they reference from `Common/`:
+  - `particles.json`: `Server/Particles/**/*.particlesystem` and `*.particlespawner`.
+  - `sounds.json`: `Server/Audio/SoundEvents/**/*.json`.
+  - `screen.json`: `Server/Camera/**/*.json` (camera shakes, camera effects, view bobbing) and
+    the `Common/ScreenEffects/*.png` overlays with the server assets that reference them.
 - `site/sim.js` simulates systems, spawners and particles from that JSON.
 - `site/render.js` draws the particles as textured quads with an orbit camera.
-- `site/app.js` is the list, the details panel and the controls.
+- `site/sounds.js` is the Sounds tab; `site/screen.js` and `site/shake.js` are the Screen tab.
+- `site/app.js` is the tabs, the list, the particle details and the controls.
 
-Field meanings come from the documentation strings in the server's particle asset codecs
-(`com/hypixel/hytale/server/core/asset/type/particle/config/*.java` in the decompiled server).
+Field meanings come from the documentation strings in the server's asset codecs in the
+decompiled server: particles in `com/hypixel/hytale/server/core/asset/type/particle/config/`,
+sounds in `server/core/asset/type/soundevent/config/`, camera in `builtin/adventure/camera/asset/`.
 
 ## Approximations
 
-The game client draws particles and its code is not available, so the preview is a close
-guess rather than an exact match. Known gaps:
+The game client draws particles and plays sounds and camera effects, and its code is not
+available, so the previews are close guesses rather than exact matches. Known gaps:
+
+### Particles
 
 - **Units:** scale is read as blocks; `DampingMultiplier` is read as velocity kept per second.
 - **Erosion:** opacity is treated as an alpha cut-off with a soft edge; the in-game glow is not drawn.
@@ -44,3 +59,29 @@ guess rather than an exact match. Known gaps:
   releases its whole `TotalParticles`; a `MaxConcurrentParticles` of 0 means the 512 cap.
 - **Duplicate ids:** some ids exist in two folders (usually a `_Test` copy); spawners resolve
   to the one in the system's own top folder first.
+
+### Sounds
+
+- Volume (decibels), pitch (semitones), random ranges, `Probability`, `StartDelay` and
+  `Looping` follow the codec docs. Fields left out of an event come from its `Parent`.
+- Volume above 0 dB plays at full browser volume (an `<audio>` element cannot go louder).
+- **Not simulated:** distance attenuation and 3D position, `SpatialBlend`, audio categories,
+  ducking, state bindings, `MaxInstance`, round-robin, `FadeIn`, `MaxStartOffset`,
+  `ProbabilityRerollDelay`.
+- The files are Ogg Vorbis. If a browser cannot play them, the Sounds tab says so; Chrome and
+  Firefox can.
+
+### Screen
+
+- **Units:** `Frequency` is read as radians per second, offsets as blocks and rotations as
+  radians, all scaled by the intensity. The intensity defaults to the matching camera
+  effect's `Value` (most are 0.05), or 1 when there is none; the box in the details panel
+  changes it.
+- **Noise:** `Perlin_*` types are one simple 1D gradient noise; easings other than `Linear`
+  and `QuadInOut` (the only two in the data) play as `Linear`.
+- **View bobbing** plays continuously, as if the player kept moving that way.
+- **Camera:** first and third person profiles both shake the same orbit camera.
+- **Overlays** are drawn at full opacity, stretched to cover the preview. In game, effects may
+  fade, pulse or tint them.
+- Weather colour filters and screen tints (`ColorFilters`, `ScreenEffectColors` in
+  `Server/Weathers`) are not shown.

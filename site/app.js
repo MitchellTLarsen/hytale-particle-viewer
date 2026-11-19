@@ -1,7 +1,10 @@
-// Page wiring: loads the particle data, lists systems, shows details and runs the preview loop.
+// Page wiring: loads the data, switches tabs, lists items, shows particle details and runs the preview loop.
 
+import { element, formatNumber } from './dom.js';
 import { Renderer } from './render.js';
+import { createScreenTab } from './screen.js';
 import { SystemInstance } from './sim.js';
+import { createSoundsTab } from './sounds.js';
 
 const RESTART_PAUSE = 0.6; // seconds between the end of a one-shot effect and its replay
 const HIDDEN_FOLDERS = new Set(['_Test', '_Example']);
@@ -19,11 +22,14 @@ const NOT_SIMULATED = [
 ];
 
 const elements = {
+  tabs: document.getElementById('tabs'),
   list: document.getElementById('list'),
   search: document.getElementById('search'),
   showHidden: document.getElementById('show-hidden'),
   count: document.getElementById('count'),
+  viewer: document.getElementById('viewer'),
   canvas: document.getElementById('canvas'),
+  overlay: document.getElementById('overlay'),
   details: document.getElementById('details'),
   restart: document.getElementById('restart'),
   pause: document.getElementById('pause'),
@@ -34,8 +40,10 @@ const elements = {
 };
 
 const state = {
+  tabs: {},
+  tab: null,
+  selected: {},
   systems: [],
-  systemsByPath: new Map(),
   spawnersById: new Map(),
   problems: [],
   current: null,
@@ -65,64 +73,88 @@ function resolveSpawner(id, systemPath) {
   );
 }
 
+async function fetchJson(path) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
+  return response.json();
+}
+
 async function loadData() {
-  const response = await fetch('data/particles.json');
-  if (!response.ok) throw new Error(`data/particles.json: HTTP ${response.status}`);
-  const data = await response.json();
+  const [data, sounds, screen] = await Promise.all(
+    ['particles', 'sounds', 'screen'].map((name) => fetchJson(`data/${name}.json`)),
+  );
   state.systems = data.systems;
   state.problems = data.problems ?? [];
-  for (const system of data.systems) state.systemsByPath.set(system.path, system);
   for (const spawner of data.spawners) {
     if (!state.spawnersById.has(spawner.id)) state.spawnersById.set(spawner.id, []);
     state.spawnersById.get(spawner.id).push(spawner);
   }
+  const particles = {
+    name: 'particles',
+    noun: 'systems',
+    showsViewer: true,
+    items: state.systems,
+    group: (system) => topFolder(system.path),
+    select: selectSystem,
+  };
+  for (const tab of [
+    particles,
+    createSoundsTab(sounds, elements.details),
+    createScreenTab(screen, elements.details, elements.overlay),
+  ]) {
+    state.tabs[tab.name] = tab;
+  }
 }
 
-// ---------------------------------------------------------------- list
+// ---------------------------------------------------------------- tabs and list
 
-function visibleSystems() {
+const itemHash = (tab, item) => `${tab.name}:${encodeURIComponent(item?.path ?? '')}`;
+
+function visibleItems() {
   const query = elements.search.value.trim().toLowerCase();
-  return state.systems.filter(
-    (system) =>
-      (elements.showHidden.checked || !isHiddenFolder(system.path)) &&
-      (!query || system.path.toLowerCase().includes(query)),
+  return state.tab.items.filter(
+    (item) =>
+      (elements.showHidden.checked || !isHiddenFolder(item.path)) && (!query || item.path.toLowerCase().includes(query)),
   );
 }
 
 function renderList() {
-  const systems = visibleSystems();
+  const tab = state.tab;
+  const items = visibleItems();
   const searching = elements.search.value.trim() !== '';
-  const byFolder = new Map();
-  for (const system of systems) {
-    const folder = topFolder(system.path);
-    if (!byFolder.has(folder)) byFolder.set(folder, []);
-    byFolder.get(folder).push(system);
+  const selected = state.selected[tab.name];
+  const byGroup = new Map();
+  for (const item of items) {
+    const name = tab.group(item);
+    if (!byGroup.has(name)) byGroup.set(name, []);
+    byGroup.get(name).push(item);
   }
   const fragment = document.createDocumentFragment();
-  for (const [folder, folderSystems] of byFolder) {
+  for (const [name, groupItems] of byGroup) {
     const group = document.createElement('details');
-    group.open = searching || (state.current && topFolder(state.current.path) === folder);
+    group.open = searching || (selected !== undefined && tab.group(selected) === name);
     const summary = document.createElement('summary');
-    summary.textContent = `${folder} (${folderSystems.length})`;
+    summary.textContent = `${name} (${groupItems.length})`;
     group.append(summary);
-    for (const system of folderSystems) {
+    for (const item of groupItems) {
       const button = document.createElement('button');
-      button.textContent = system.id;
-      button.title = system.path;
-      button.dataset.path = system.path;
-      button.classList.toggle('selected', system === state.current);
-      button.addEventListener('click', () => (location.hash = encodeURIComponent(system.path)));
+      button.textContent = item.id;
+      button.title = item.path;
+      button.dataset.path = item.path;
+      button.classList.toggle('selected', item === selected);
+      button.addEventListener('click', () => (location.hash = itemHash(tab, item)));
       group.append(button);
     }
     fragment.append(group);
   }
   elements.list.replaceChildren(fragment);
-  elements.count.textContent = `${systems.length} of ${state.systems.length} systems`;
+  elements.count.textContent = `${items.length} of ${tab.items.length} ${tab.noun}`;
 }
 
 function markSelected() {
+  const path = state.selected[state.tab.name]?.path;
   for (const button of elements.list.querySelectorAll('button')) {
-    const selected = button.dataset.path === state.current?.path;
+    const selected = button.dataset.path === path;
     button.classList.toggle('selected', selected);
     if (selected) {
       button.parentElement.open = true;
@@ -132,24 +164,42 @@ function markSelected() {
 }
 
 function moveSelection(step) {
-  const systems = visibleSystems();
-  if (systems.length === 0) return;
-  const index = systems.indexOf(state.current);
-  const next = systems[(index + step + systems.length) % systems.length];
-  location.hash = encodeURIComponent(next.path);
+  const items = visibleItems();
+  if (items.length === 0) return;
+  const index = items.indexOf(state.selected[state.tab.name]);
+  location.hash = itemHash(state.tab, items[(index + step + items.length) % items.length]);
 }
 
-// ---------------------------------------------------------------- selection and details
+function showTab(tab) {
+  state.tab?.leave?.();
+  state.tab = tab;
+  for (const button of elements.tabs.querySelectorAll('button')) {
+    button.classList.toggle('active', button.dataset.tab === tab.name);
+  }
+  elements.viewer.hidden = !tab.showsViewer;
+  renderList();
+}
 
+// A hash is "<tab>:<path>"; a bare path is a particle system, as in links from before the tabs.
 function selectFromHash() {
-  const path = decodeURIComponent(location.hash.slice(1));
-  const system = state.systemsByPath.get(path) ?? state.systems.find((s) => !isHiddenFolder(s.path));
-  if (!system) return;
+  const [, name, path] = decodeURIComponent(location.hash.slice(1)).match(/^(?:(\w+):)?(.*)$/s);
+  const tab = state.tabs[name] ?? state.tabs.particles;
+  const item =
+    tab.items.find((i) => i.path === path) ?? state.selected[tab.name] ?? tab.items.find((i) => !isHiddenFolder(i.path));
+  if (!item) return;
+  if (tab !== state.tab) showTab(tab);
+  state.selected[tab.name] = item;
+  tab.select(item);
+  markSelected();
+}
+
+// ---------------------------------------------------------------- particle details
+
+function selectSystem(system) {
   state.current = system;
   state.hiddenGroups.clear();
   restart();
   renderDetails();
-  markSelected();
 }
 
 function restart() {
@@ -159,15 +209,6 @@ function restart() {
   state.instance.groups.forEach((group, index) => (group.hidden = state.hiddenGroups.has(index)));
   state.restartIn = null;
 }
-
-function element(tag, text, className) {
-  const node = document.createElement(tag);
-  if (text !== undefined) node.textContent = text;
-  if (className) node.className = className;
-  return node;
-}
-
-const formatNumber = (value) => String(Math.round(value * 1000) / 1000);
 
 function formatRange(range) {
   if (range === undefined || range === null) return '';
@@ -265,10 +306,19 @@ function spawnerTable(groups) {
 
 // ---------------------------------------------------------------- controls and loop
 
+function restartAll() {
+  restart();
+  state.tabs.screen.restart();
+}
+
 function wireControls() {
+  for (const button of elements.tabs.querySelectorAll('button')) {
+    const tab = state.tabs[button.dataset.tab];
+    button.addEventListener('click', () => (location.hash = itemHash(tab, state.selected[tab.name])));
+  }
   elements.search.addEventListener('input', renderList);
   elements.showHidden.addEventListener('change', renderList);
-  elements.restart.addEventListener('click', restart);
+  elements.restart.addEventListener('click', restartAll);
   elements.pause.addEventListener('click', togglePause);
   elements.speed.addEventListener('change', () => (state.speed = parseFloat(elements.speed.value)));
   elements.grid.addEventListener('change', () => (renderer.showGrid = elements.grid.checked));
@@ -280,7 +330,7 @@ function wireControls() {
   document.addEventListener('keydown', (event) => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
     if (event.key === ' ') togglePause();
-    else if (event.key === 'r') restart();
+    else if (event.key === 'r') restartAll();
     else if (event.key === 'ArrowDown') moveSelection(1);
     else if (event.key === 'ArrowUp') moveSelection(-1);
     else return;
@@ -348,6 +398,8 @@ function startLoop() {
         if (state.restartIn <= 0) restart();
       }
     }
+    if (!state.paused) state.tabs.screen.step(dt);
+    renderer.shake = state.tabs.screen.cameraShake();
     renderer.draw(state.instance);
     elements.stats.textContent = state.instance
       ? `${state.instance.particleCount} particles, ${state.instance.age.toFixed(1)} s`
@@ -372,13 +424,12 @@ async function main() {
     await loadData();
   } catch (error) {
     showError(
-      `Could not load the particle data (${error.message}). Run "python3 build_site.py", then serve the ` +
+      `Could not load the data (${error.message}). Run "python3 build_site.py", then serve the ` +
         'site folder with "python3 -m http.server -d site 8000" and open http://localhost:8000.',
     );
     return;
   }
   wireControls();
-  renderList();
   selectFromHash();
   startLoop();
 }
