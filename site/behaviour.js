@@ -4,6 +4,7 @@
 import { button, chips, element } from './dom.js';
 import { graphView, roleFlow, ruleSource, volumeFlow } from './flow.js';
 import { valueNode } from './links.js';
+import { weatherCard } from './world.js';
 
 const META_KEYS = new Set(['Type', '$Comment', '$TODO', 'Enabled']);
 const FLOW_KEYS = new Set(['Sensor', 'Sensors', 'Actions', 'Action', 'Instructions', 'Filters', 'Next', 'Failed']);
@@ -348,6 +349,7 @@ function volumeCard(volume, context) {
 export function behaviourCard(path, asset, context) {
   if (path.includes('#')) return volumeCard(asset, context);
   if (path.startsWith('Server/NPC/Roles/')) return roleCard(asset, context);
+  if (path.startsWith('Server/Weathers/')) return weatherCard(asset);
   if (path.startsWith('Server/Item/Interactions/') || path.startsWith('Server/Item/RootInteractions/')) return interactionCard(asset);
   return null;
 }
